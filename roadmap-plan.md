@@ -128,8 +128,8 @@ esql query -f dashboard_queries.esql --format json > results.json
 - [ ] Goreleaser config for cross-platform binaries (linux/mac/windows, amd64/arm64)
 - [ ] CI: GitHub Actions for test, lint, build, release
 - [ ] Man page generation (Cobra supports this)
-- [ ] Error messages with actionable suggestions (e.g., "connection refused — is --host correct?")
-- [ ] `--verbose` / `--debug` flag for request/response tracing
+- [x] Error messages with actionable suggestions (e.g., "connection refused — is --host correct?")
+- [x] `--verbose` / `--debug` flag for request/response tracing
 
 ---
 

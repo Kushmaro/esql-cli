@@ -135,6 +135,9 @@ func clearAndRun(c *client.Client, query string, opts formatter.Options, every t
 	resp, err := c.Query(query)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		if hint := client.ErrorHint(err); hint != "" {
+			fmt.Fprintf(os.Stderr, "  Hint: %s\n", hint)
+		}
 		return
 	}
 

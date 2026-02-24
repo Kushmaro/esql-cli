@@ -135,6 +135,9 @@ func (r *REPL) executeQuery(query string) {
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		if hint := client.ErrorHint(err); hint != "" {
+			fmt.Fprintf(os.Stderr, "  Hint: %s\n", hint)
+		}
 		return
 	}
 
