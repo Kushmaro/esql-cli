@@ -31,6 +31,13 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, query := args[0], args[1]
 
+		if strings.ContainsAny(name, " |,()") {
+			if !strings.ContainsAny(query, " |,()") {
+				return fmt.Errorf("it looks like the arguments are swapped — expected: esql save <name> <query>\n  try: esql save %s '%s'", query, name)
+			}
+			return fmt.Errorf("query name %q contains spaces or special characters — use a simple name like 'my-query'", name)
+		}
+
 		cfg, err := config.LoadFileConfig()
 		if err != nil {
 			return err
