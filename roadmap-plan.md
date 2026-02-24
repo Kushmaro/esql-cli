@@ -70,13 +70,14 @@ A `psql`-style interactive shell for exploratory queries.
 
 ---
 
-## Phase 3: Connection Management
+## Phase 3: Connection Management [DONE]
 
 Make it easy to work with multiple clusters.
 
-- [ ] `esql init` — interactive setup wizard (prompt for host, auth method, test connection)
-- [ ] Named profiles in config file:
+- [x] `esql init` — interactive setup wizard (prompt for host, auth method, test connection)
+- [x] Named profiles in config file:
   ```yaml
+  default_profile: production
   profiles:
     production:
       host: https://prod.es.example.com:9200
@@ -86,9 +87,9 @@ Make it easy to work with multiple clusters.
       user: elastic
       password: "..."
   ```
-- [ ] `--profile` flag to select a profile: `esql query --profile staging '...'`
-- [ ] `esql profiles list` — show configured profiles
-- [ ] Connection test on startup (optional, controlled by config)
+- [x] `--profile` flag to select a profile: `esql query --profile staging '...'`
+- [x] `esql profiles list` — show configured profiles (with `*` marking the default)
+- [x] Connection test during init (fails gracefully, doesn't save broken profiles)
 
 ---
 
