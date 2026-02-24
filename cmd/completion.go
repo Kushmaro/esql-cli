@@ -82,7 +82,7 @@ func registerDynamicCompletions() {
 		return formatValues, cobra.ShellCompDirectiveNoFileComp
 	})
 
-	indicesCmd.RegisterFlagCompletionFunc("format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	dataCmd.RegisterFlagCompletionFunc("format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return formatValues, cobra.ShellCompDirectiveNoFileComp
 	})
 
@@ -91,7 +91,7 @@ func registerDynamicCompletions() {
 	})
 
 	fieldsCmd.ValidArgsFunction = completeIndexNames
-	indicesCmd.ValidArgsFunction = completeIndexNames
+	dataCmd.ValidArgsFunction = completeIndexNames
 }
 
 func completeIndexNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
