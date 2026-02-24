@@ -66,7 +66,7 @@ esql/
 ├── cmd/                    # Cobra command definitions
 │   ├── root.go             # Root command (launches REPL by default)
 │   ├── query.go            # One-shot query execution
-│   └── configure.go        # Connection configuration
+│   └── init.go             # Connection initialization
 ├── internal/
 │   ├── client/             # Elasticsearch HTTP client (ES|QL endpoint)
 │   ├── config/             # Viper config loading and profiles
