@@ -14,6 +14,7 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/peterh/liner"
+	"golang.org/x/term"
 )
 
 type REPL struct {
@@ -119,6 +120,10 @@ func (r *REPL) Run() error {
 }
 
 func (r *REPL) executeQuery(query string) {
+	if term.IsTerminal(int(os.Stderr.Fd())) {
+		fmt.Fprintf(os.Stderr, "%s\n", Highlight(query))
+	}
+
 	// Pre-fetch fields for the referenced index (for future completions)
 	if idx := extractIndexName(query); idx != "" {
 		go r.completer.prefetchFields(idx)
@@ -201,6 +206,25 @@ func (r *REPL) handleMeta(input string) bool {
 		r.completer.fieldCache = make(map[string][]string)
 		r.completer.mu.Unlock()
 		fmt.Fprintf(os.Stderr, "Loaded %d indices/data streams\n", len(r.completer.indexNames))
+
+	case "\\sig":
+		if len(parts) < 2 {
+			fmt.Fprintln(os.Stderr, "Usage: \\sig <function>  (e.g. \\sig AVG)")
+			return false
+		}
+		name := strings.ToUpper(parts[1])
+		if sig, ok := funcSignatures[name]; ok {
+			fmt.Fprintf(os.Stderr, "  %s\n", sig)
+		} else {
+			fmt.Fprintf(os.Stderr, "Unknown function %q (tab-complete to see available functions)\n", parts[1])
+		}
+
+	case "\\sample", "\\s":
+		if len(parts) < 2 {
+			fmt.Fprintln(os.Stderr, "Usage: \\sample <index>  (e.g. \\sample logs-*)")
+			return false
+		}
+		r.executeQuery(fmt.Sprintf("FROM %s | LIMIT 5", parts[1]))
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s (type \\h for help)\n", cmd)
@@ -464,20 +488,22 @@ func (r *REPL) showHelp() {
 	help := `
   ES|QL REPL Commands:
 
-  \q            Quit
-  \f FORMAT     Set output format (table, json, csv, tsv)
-  \timing       Toggle query timing display
-  \clear        Clear the screen
-  \d            List indices and data streams
-  \d INDEX      Show fields for an index or data stream
-  \refresh      Refresh index list and clear field cache
-  \h            Show this help
+  \q              Quit
+  \f FORMAT       Set output format (table, json, csv, tsv)
+  \timing         Toggle query timing display
+  \clear          Clear the screen
+  \d              List indices, data streams, and aliases
+  \d INDEX        Show fields for an index or data stream
+  \sample INDEX   Show a 5-row sample from an index (alias: \s)
+  \sig FUNCTION   Show function signature (e.g. \sig AVG)
+  \refresh        Refresh index list and clear field cache
+  \h              Show this help
 
   Multiline queries:
     End a line with | or \ to continue on the next line.
 
   Keyboard shortcuts:
-    Tab           Autocomplete
+    Tab           Autocomplete (functions auto-append '(')
     Ctrl-C        Cancel current input
     Ctrl-D        Quit
     Up/Down       Navigate history

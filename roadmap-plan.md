@@ -223,11 +223,11 @@ Make writing and re-running queries frictionless.
 
 Bring the interactive experience closer to `psql`.
 
-- [ ] **Syntax highlighting** — color ES|QL keywords, functions, strings, and operators as the user types in the REPL
-- [ ] **Function signature hints** — when tab-completing a function like `AVG(`, show a brief inline hint with expected arguments (e.g., `AVG(number_field)`)
+- [x] **Syntax highlighting** — color ES|QL keywords, functions, strings, and operators as the user types in the REPL
+- [x] **Function signature hints** — when tab-completing a function like `AVG(`, show a brief inline hint with expected arguments (e.g., `AVG(number_field)`)
 - [ ] **Pager support** — automatically pipe large result sets through `less` (like `psql` does), with `\pager` to toggle
 - [ ] **`.esqlrc` startup file** — like `.psqlrc`, auto-run commands on REPL start (e.g., `\f json`, `\timing`)
-- [ ] **`\sample <index>`** — show a quick sample of rows from an index (`FROM <index> | LIMIT 5`) in one keystroke, so you can eyeball the shape of the data without typing a full query
+- [x] **`\sample <index>`** — show a quick sample of rows from an index (`FROM <index> | LIMIT 5`) in one keystroke, so you can eyeball the shape of the data without typing a full query
 - [ ] **`\history`** — browse and re-run queries from history interactively
 - [ ] **Horizontal scroll / column truncation** — handle wide result sets that exceed terminal width (truncate with `...` or allow horizontal scrolling)
 
