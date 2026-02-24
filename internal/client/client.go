@@ -192,12 +192,13 @@ type FieldInfo struct {
 
 // DataStreamInfo represents a data stream from the _data_stream API.
 type DataStreamInfo struct {
-	Name           string `json:"name"`
-	TimestampField string `json:"timestamp_field"`
-	Status         string `json:"status"`
-	Template       string `json:"template"`
-	IndexMode      string `json:"index_mode"`
-	BackingIndices int    `json:"backing_indices"`
+	Name               string   `json:"name"`
+	TimestampField     string   `json:"timestamp_field"`
+	Status             string   `json:"status"`
+	Template           string   `json:"template"`
+	IndexMode          string   `json:"index_mode"`
+	BackingIndices     int      `json:"backing_indices"`
+	BackingIndexNames  []string `json:"backing_index_names,omitempty"`
 }
 
 // ListDataStreams returns data stream metadata via _data_stream.
@@ -230,13 +231,23 @@ func (c *Client) ListDataStreams(pattern string) ([]DataStreamInfo, error) {
 
 	streams := make([]DataStreamInfo, len(raw.DataStreams))
 	for i, ds := range raw.DataStreams {
+		var indexNames []string
+		for _, rawIdx := range ds.Indices {
+			var idx struct {
+				Name string `json:"index_name"`
+			}
+			if json.Unmarshal(rawIdx, &idx) == nil && idx.Name != "" {
+				indexNames = append(indexNames, idx.Name)
+			}
+		}
 		streams[i] = DataStreamInfo{
-			Name:           ds.Name,
-			TimestampField: ds.TimestampField.Name,
-			Status:         strings.ToLower(ds.Status),
-			Template:       ds.Template,
-			IndexMode:      ds.IndexMode,
-			BackingIndices: len(ds.Indices),
+			Name:              ds.Name,
+			TimestampField:    ds.TimestampField.Name,
+			Status:            strings.ToLower(ds.Status),
+			Template:          ds.Template,
+			IndexMode:         ds.IndexMode,
+			BackingIndices:    len(ds.Indices),
+			BackingIndexNames: indexNames,
 		}
 	}
 
@@ -250,7 +261,7 @@ func (c *Client) ListIndices(pattern string) ([]IndexInfo, error) {
 	if pattern != "" {
 		path += "/" + pattern
 	}
-	path += "?format=json&h=health,status,index,uuid,docs.count,store.size&s=index"
+	path += "?format=json&h=health,status,index,uuid,docs.count,store.size&bytes=b&s=index"
 
 	body, err := c.doGet(path)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -183,7 +184,7 @@ func (r *REPL) handleMeta(input string) bool {
 		if len(parts) >= 2 {
 			r.showFields(parts[1])
 		} else {
-			r.showIndices()
+			r.showData()
 		}
 
 	case "\\h", "\\?":
@@ -204,21 +205,86 @@ func (r *REPL) handleMeta(input string) bool {
 	return false
 }
 
-func (r *REPL) showIndices() {
-	r.completer.mu.RLock()
-	names := r.completer.indexNames
-	r.completer.mu.RUnlock()
+func (r *REPL) showData() {
+	type entry struct {
+		kind, health, name, docs, size string
+	}
 
-	if len(names) == 0 {
-		fmt.Fprintln(os.Stderr, "No indices loaded. Try \\refresh")
+	indices, idxErr := r.client.ListIndices("")
+	streams, dsErr := r.client.ListDataStreams("")
+
+	if idxErr != nil && dsErr != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", idxErr)
 		return
 	}
 
-	indices, err := r.client.ListIndices("")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+	// Reverse map: backing index name -> data stream name
+	backingToDS := make(map[string]string)
+	var dsNames []string
+	if dsErr == nil {
+		for _, ds := range streams {
+			dsNames = append(dsNames, ds.Name)
+			for _, name := range ds.BackingIndexNames {
+				backingToDS[name] = ds.Name
+			}
+		}
+	}
+
+	// Resolve data stream names via _cat/indices to get backing index stats
+	type dsStats struct{ docs, bytes int64 }
+	statsMap := make(map[string]*dsStats)
+	if len(dsNames) > 0 {
+		backingIndices, err := r.client.ListIndices(strings.Join(dsNames, ","))
+		if err == nil {
+			for _, idx := range backingIndices {
+				dsName := backingToDS[idx.Index]
+				if dsName == "" {
+					continue
+				}
+				if statsMap[dsName] == nil {
+					statsMap[dsName] = &dsStats{}
+				}
+				if n, err := strconv.ParseInt(idx.DocsCount, 10, 64); err == nil {
+					statsMap[dsName].docs += n
+				}
+				if n, err := strconv.ParseInt(idx.StoreSize, 10, 64); err == nil {
+					statsMap[dsName].bytes += n
+				}
+			}
+		}
+	}
+
+	var entries []entry
+
+	if idxErr == nil {
+		for _, idx := range indices {
+			if backingToDS[idx.Index] != "" || strings.HasPrefix(idx.Index, ".") {
+				continue
+			}
+			entries = append(entries, entry{"index", idx.Health, idx.Index, idx.DocsCount, displaySize(idx.StoreSize, idx.DocsCount)})
+		}
+	}
+
+	if dsErr == nil {
+		for _, ds := range streams {
+			docs := "0"
+			size := "n/a"
+			if s := statsMap[ds.Name]; s != nil {
+				docs = strconv.FormatInt(s.docs, 10)
+				size = displaySize(strconv.FormatInt(s.bytes, 10), docs)
+			}
+			entries = append(entries, entry{"data_stream", ds.Status, ds.Name, docs, size})
+		}
+	}
+
+	if len(entries) == 0 {
+		fmt.Fprintln(os.Stderr, "No indices or data streams found.")
 		return
 	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].name < entries[j].name
+	})
 
 	tbl := tablewriter.NewTable(os.Stdout,
 		tablewriter.WithConfig(tablewriter.Config{
@@ -227,14 +293,40 @@ func (r *REPL) showIndices() {
 			},
 		}),
 	)
-	tbl.Header([]string{"health", "status", "index", "docs.count", "store.size"})
+	tbl.Header([]string{"type", "health", "name", "docs.count", "store.size"})
 
-	for _, idx := range indices {
-		if !strings.HasPrefix(idx.Index, ".") {
-			tbl.Append([]any{idx.Health, idx.Status, idx.Index, idx.DocsCount, idx.StoreSize})
-		}
+	for _, e := range entries {
+		tbl.Append([]any{e.kind, e.health, e.name, e.docs, e.size})
 	}
 	tbl.Render()
+}
+
+func displaySize(sizeBytes, docsCount string) string {
+	if sizeBytes == "0" || sizeBytes == "" {
+		if n, err := strconv.ParseInt(docsCount, 10, 64); err == nil && n > 0 {
+			return "n/a"
+		}
+	}
+	return formatBytes(sizeBytes)
+}
+
+func formatBytes(s string) string {
+	b, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || b < 0 {
+		return s
+	}
+	switch {
+	case b < 1024:
+		return fmt.Sprintf("%db", b)
+	case b < 1024*1024:
+		return fmt.Sprintf("%.1fkb", float64(b)/1024)
+	case b < 1024*1024*1024:
+		return fmt.Sprintf("%.1fmb", float64(b)/(1024*1024))
+	case b < 1024*1024*1024*1024:
+		return fmt.Sprintf("%.1fgb", float64(b)/(1024*1024*1024))
+	default:
+		return fmt.Sprintf("%.1ftb", float64(b)/(1024*1024*1024*1024))
+	}
 }
 
 func (r *REPL) showFields(index string) {
@@ -285,8 +377,8 @@ func (r *REPL) showHelp() {
   \f FORMAT     Set output format (table, json, csv, tsv)
   \timing       Toggle query timing display
   \clear        Clear the screen
-  \d            List indices
-  \d INDEX      Show fields for an index
+  \d            List indices and data streams
+  \d INDEX      Show fields for an index or data stream
   \refresh      Refresh index list and clear field cache
   \h            Show this help
 
