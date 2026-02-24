@@ -13,7 +13,7 @@ The project skeleton is in place. Nothing executes real queries yet.
 - [x] Root command with global flags (`--host`, `--user`, `--password`, `--api-key`, `--insecure`, `--config`)
 - [x] Config cascade: file (`~/.esql.yaml`) → env vars (`ESQL_*`) → CLI flags
 - [x] `esql query` subcommand (stub — prints placeholder)
-- [x] `esql configure` subcommand (stub)
+- [x] `esql init` subcommand (stub)
 - [x] ES HTTP client with basic auth + API key auth support
 - [x] Output formatter with table, JSON, and CSV modes
 - [x] Project layout: `cmd/`, `internal/client/`, `internal/config/`, `internal/formatter/`, `internal/repl/`
