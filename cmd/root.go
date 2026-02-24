@@ -1,11 +1,20 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
+	"github.com/Kushmaro/esql-cli/internal/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+)
+
+const (
+	ExitSuccess    = 0
+	ExitQuery      = 1
+	ExitConnection = 2
+	ExitConfig     = 3
 )
 
 var cfgFile string
@@ -20,8 +29,20 @@ an interactive REPL for exploratory data analysis.`,
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
+}
+
+func exitCode(err error) int {
+	var connErr *client.ConnectionError
+	if errors.As(err, &connErr) {
+		return ExitConnection
+	}
+	var esErr *client.ESError
+	if errors.As(err, &esErr) {
+		return ExitQuery
+	}
+	return ExitQuery
 }
 
 func init() {

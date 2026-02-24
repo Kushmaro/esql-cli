@@ -15,8 +15,11 @@ import (
 )
 
 type Options struct {
-	Format   string
-	NoHeader bool
+	Format    string
+	NoHeader  bool
+	Delimiter string
+	Columns   []string
+	Quiet     bool
 }
 
 // IsTTY returns true if stdout is a terminal (not piped).
@@ -34,18 +37,54 @@ func DefaultFormat() string {
 
 // Format writes the query response to w using the given options.
 func Format(w io.Writer, resp *client.QueryResponse, opts Options) error {
+	filtered := resp
+	if len(opts.Columns) > 0 {
+		filtered = filterColumns(resp, opts.Columns)
+	}
+
 	switch strings.ToLower(opts.Format) {
 	case "table":
-		return formatTable(w, resp, opts)
+		return formatTable(w, filtered, opts)
 	case "json":
-		return formatJSON(w, resp)
+		return formatJSON(w, filtered)
 	case "csv":
-		return formatCSV(w, resp, opts)
+		return formatCSV(w, filtered, opts)
 	case "tsv":
-		return formatTSV(w, resp, opts)
+		return formatDelimited(w, filtered, opts, "\t")
 	default:
 		return fmt.Errorf("unknown format %q (supported: table, json, csv, tsv)", opts.Format)
 	}
+}
+
+func filterColumns(resp *client.QueryResponse, columns []string) *client.QueryResponse {
+	keep := make(map[string]bool, len(columns))
+	for _, c := range columns {
+		keep[strings.TrimSpace(c)] = true
+	}
+
+	var indices []int
+	var cols []client.Column
+	for i, col := range resp.Columns {
+		if keep[col.Name] {
+			indices = append(indices, i)
+			cols = append(cols, col)
+		}
+	}
+
+	if len(indices) == 0 {
+		return resp
+	}
+
+	values := make([][]interface{}, len(resp.Values))
+	for i, row := range resp.Values {
+		newRow := make([]interface{}, len(indices))
+		for j, idx := range indices {
+			newRow[j] = row[idx]
+		}
+		values[i] = newRow
+	}
+
+	return &client.QueryResponse{Columns: cols, Values: values, Took: resp.Took}
 }
 
 func formatValue(v interface{}) string {
@@ -149,13 +188,18 @@ func formatCSV(w io.Writer, resp *client.QueryResponse, opts Options) error {
 	return nil
 }
 
-func formatTSV(w io.Writer, resp *client.QueryResponse, opts Options) error {
+func formatDelimited(w io.Writer, resp *client.QueryResponse, opts Options, defaultDelim string) error {
+	delim := defaultDelim
+	if opts.Delimiter != "" {
+		delim = opts.Delimiter
+	}
+
 	if !opts.NoHeader {
 		headers := make([]string, len(resp.Columns))
 		for i, col := range resp.Columns {
 			headers[i] = col.Name
 		}
-		fmt.Fprintln(w, strings.Join(headers, "\t"))
+		fmt.Fprintln(w, strings.Join(headers, delim))
 	}
 
 	for _, row := range resp.Values {
@@ -163,7 +207,7 @@ func formatTSV(w io.Writer, resp *client.QueryResponse, opts Options) error {
 		for i, v := range row {
 			vals[i] = formatValue(v)
 		}
-		fmt.Fprintln(w, strings.Join(vals, "\t"))
+		fmt.Fprintln(w, strings.Join(vals, delim))
 	}
 	return nil
 }

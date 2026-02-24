@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/Kushmaro/esql-cli/internal/client"
 	"github.com/Kushmaro/esql-cli/internal/config"
@@ -11,16 +14,22 @@ import (
 )
 
 var queryCmd = &cobra.Command{
-	Use:   "query [esql query string]",
+	Use:   "query [esql query string | -]",
 	Short: "Execute an ES|QL query",
 	Long: `Execute an ES|QL query against the configured Elasticsearch cluster
 and display the results.
 
+The query can be provided as an argument, read from stdin with '-',
+or loaded from a file with --file.
+
 Examples:
   esql query 'FROM logs-* | WHERE log.level == "error" | LIMIT 10'
   esql query 'FROM logs-* | STATS count = COUNT(*) BY service.name' -f json
-  esql query 'FROM logs-* | KEEP message | LIMIT 50' -f csv --no-header`,
-	Args:         cobra.ExactArgs(1),
+  echo 'FROM logs-* | LIMIT 5' | esql query -
+  esql query --file queries.esql --format json
+  esql query 'FROM logs-* | LIMIT 100' --columns host.name,log.level
+  esql query 'FROM logs-* | LIMIT 10' --delimiter '|'`,
+	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE:         runQuery,
 }
@@ -28,39 +37,135 @@ Examples:
 func init() {
 	queryCmd.Flags().StringP("format", "f", "", "output format: table, json, csv, tsv (default: table for TTY, tsv for pipes)")
 	queryCmd.Flags().Bool("no-header", false, "suppress column headers in output")
+	queryCmd.Flags().Bool("quiet", false, "suppress all non-data output (timing, row counts)")
+	queryCmd.Flags().String("delimiter", "", "custom field delimiter for flat output (implies tsv format)")
+	queryCmd.Flags().String("columns", "", "comma-separated list of columns to include in output")
+	queryCmd.Flags().Duration("timeout", 0, "per-query timeout (e.g. 60s, 5m)")
+	queryCmd.Flags().String("file", "", "read queries from file (separated by ; or blank lines)")
 	rootCmd.AddCommand(queryCmd)
 }
 
 func runQuery(cmd *cobra.Command, args []string) error {
-	query := args[0]
-
-	format, _ := cmd.Flags().GetString("format")
-	if format == "" {
-		format = formatter.DefaultFormat()
-	}
-
-	noHeader, _ := cmd.Flags().GetBool("no-header")
-
-	cfg := config.ClientConfig()
-	c := client.New(cfg)
-
-	resp, err := c.Query(query)
+	file, _ := cmd.Flags().GetString("file")
+	queries, err := resolveQueries(args, file)
 	if err != nil {
 		return err
 	}
 
+	format, _ := cmd.Flags().GetString("format")
+	delimiter, _ := cmd.Flags().GetString("delimiter")
+	if format == "" {
+		if delimiter != "" {
+			format = "tsv"
+		} else {
+			format = formatter.DefaultFormat()
+		}
+	}
+
+	noHeader, _ := cmd.Flags().GetBool("no-header")
+	quiet, _ := cmd.Flags().GetBool("quiet")
+	columns, _ := cmd.Flags().GetString("columns")
+	timeout, _ := cmd.Flags().GetDuration("timeout")
+
+	var cols []string
+	if columns != "" {
+		for _, c := range strings.Split(columns, ",") {
+			if t := strings.TrimSpace(c); t != "" {
+				cols = append(cols, t)
+			}
+		}
+	}
+
+	cfg := config.ClientConfig()
+	if timeout > 0 {
+		cfg.Timeout = timeout
+	}
+	c := client.New(cfg)
+
 	opts := formatter.Options{
-		Format:   format,
-		NoHeader: noHeader,
+		Format:    format,
+		NoHeader:  noHeader,
+		Delimiter: delimiter,
+		Columns:   cols,
+		Quiet:     quiet,
+	}
+
+	for i, query := range queries {
+		if err := executeOne(c, query, opts, quiet); err != nil {
+			if len(queries) > 1 {
+				fmt.Fprintf(os.Stderr, "Error in query %d: %s\n", i+1, err)
+				continue
+			}
+			return err
+		}
+
+		if len(queries) > 1 && i < len(queries)-1 && !quiet && formatter.IsTTY() {
+			fmt.Fprintln(os.Stderr)
+		}
+	}
+
+	return nil
+}
+
+func executeOne(c *client.Client, query string, opts formatter.Options, quiet bool) error {
+	resp, err := c.Query(query)
+	if err != nil {
+		return err
 	}
 
 	if err := formatter.Format(os.Stdout, resp, opts); err != nil {
 		return err
 	}
 
-	if formatter.IsTTY() {
+	if !quiet && formatter.IsTTY() {
 		fmt.Fprintf(os.Stderr, "\n%d rows in set (%dms)\n", len(resp.Values), resp.Took)
 	}
 
 	return nil
 }
+
+func resolveQueries(args []string, file string) ([]string, error) {
+	if file != "" {
+		return readQueriesFromFile(file)
+	}
+
+	if len(args) == 0 {
+		return nil, fmt.Errorf("provide a query argument, use '-' for stdin, or use --file")
+	}
+
+	if args[0] == "-" {
+		return readQueriesFromReader(os.Stdin)
+	}
+
+	return []string{args[0]}, nil
+}
+
+func readQueriesFromFile(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading query file: %w", err)
+	}
+	return splitQueries(string(data)), nil
+}
+
+func readQueriesFromReader(r io.Reader) ([]string, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("reading stdin: %w", err)
+	}
+	return splitQueries(string(data)), nil
+}
+
+func splitQueries(input string) []string {
+	var queries []string
+	for _, part := range strings.Split(input, ";") {
+		q := strings.TrimSpace(part)
+		if q != "" {
+			queries = append(queries, q)
+		}
+	}
+	return queries
+}
+
+// Ensure timeout type is registered.
+var _ time.Duration
