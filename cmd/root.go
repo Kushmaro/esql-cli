@@ -33,12 +33,14 @@ func init() {
 	rootCmd.PersistentFlags().String("password", "", "Elasticsearch password")
 	rootCmd.PersistentFlags().String("api-key", "", "Elasticsearch API key (takes precedence over user/password)")
 	rootCmd.PersistentFlags().Bool("insecure", false, "skip TLS certificate verification")
+	rootCmd.PersistentFlags().String("profile", "", "named connection profile from config file")
 
 	viper.BindPFlag("host", rootCmd.PersistentFlags().Lookup("host"))
 	viper.BindPFlag("user", rootCmd.PersistentFlags().Lookup("user"))
 	viper.BindPFlag("password", rootCmd.PersistentFlags().Lookup("password"))
 	viper.BindPFlag("api_key", rootCmd.PersistentFlags().Lookup("api-key"))
 	viper.BindPFlag("insecure", rootCmd.PersistentFlags().Lookup("insecure"))
+	viper.BindPFlag("profile", rootCmd.PersistentFlags().Lookup("profile"))
 }
 
 func initConfig() {

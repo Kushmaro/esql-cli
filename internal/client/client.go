@@ -70,6 +70,52 @@ func New(cfg Config) *Client {
 	}
 }
 
+// ClusterInfo is returned by Ping to verify the connection.
+type ClusterInfo struct {
+	Name    string `json:"name"`
+	Cluster string `json:"cluster_name"`
+	Version struct {
+		Number string `json:"number"`
+	} `json:"version"`
+}
+
+// Ping checks connectivity to the Elasticsearch cluster.
+func (c *Client) Ping() (*ClusterInfo, error) {
+	url := strings.TrimRight(c.config.Host, "/") + "/"
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	if c.config.APIKey != "" {
+		req.Header.Set("Authorization", "ApiKey "+c.config.APIKey)
+	} else if c.config.User != "" {
+		req.SetBasicAuth(c.config.User, c.config.Password)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("connection failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, parseESError(resp.StatusCode, body)
+	}
+
+	var info ClusterInfo
+	if err := json.Unmarshal(body, &info); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+
+	return &info, nil
+}
+
 func (c *Client) Query(esql string) (*QueryResponse, error) {
 	reqBody := QueryRequest{Query: esql}
 	body, err := json.Marshal(reqBody)
