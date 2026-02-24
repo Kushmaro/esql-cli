@@ -6,8 +6,11 @@ import (
 	"os"
 
 	"github.com/Kushmaro/esql-cli/internal/client"
+	"github.com/Kushmaro/esql-cli/internal/config"
+	"github.com/Kushmaro/esql-cli/internal/repl"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"golang.org/x/term"
 )
 
 const (
@@ -23,8 +26,17 @@ var rootCmd = &cobra.Command{
 	Use:   "esql",
 	Short: "Query Elasticsearch using ES|QL from the command line",
 	Long: `esql is a CLI tool for running ES|QL queries against remote
-Elasticsearch clusters. Use it for one-shot queries or launch
-an interactive REPL for exploratory data analysis.`,
+Elasticsearch clusters. Run with no subcommand to launch an
+interactive shell with tab completion and history.`,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) {
+			cfg := config.ClientConfig()
+			r := repl.New(cfg)
+			return r.Run()
+		}
+		return cmd.Help()
+	},
 }
 
 func Execute() {

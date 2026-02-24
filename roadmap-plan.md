@@ -122,7 +122,7 @@ esql query -f dashboard_queries.esql --format json > results.json
 
 ## Phase 5: Polish & Distribution
 
-- [ ] Shell completion scripts (Cobra gives us these for free, just wire them up)
+- [x] Shell completion scripts (`esql completion bash|zsh|fish|powershell`) with dynamic completions for `--profile`, `--format`, and index names
 - [ ] `--version` flag with build info (git sha, build date)
 - [ ] Homebrew formula
 - [ ] Goreleaser config for cross-platform binaries (linux/mac/windows, amd64/arm64)
@@ -133,36 +133,42 @@ esql query -f dashboard_queries.esql --format json > results.json
 
 ---
 
-## Phase 6: Interactive REPL
+## Phase 6: Interactive REPL [DONE]
 
-A `psql`-style interactive shell for exploratory queries.
+A `psql`-style interactive shell for exploratory queries. Launched by running `esql` with no subcommand on an interactive terminal.
 
 ### Core REPL
 
-- [ ] Launch REPL when `esql` is invoked with no subcommand (or `esql repl`)
-- [ ] Prompt: `esql> `
-- [ ] Line editing (arrow keys, home/end, ctrl-a/e)
-- [ ] Command history (persisted to `~/.esql_history`)
-- [ ] Multiline query input (detect incomplete pipes, allow `\` continuation)
-- [ ] Display query execution time after each result
-- [ ] Graceful Ctrl-C (cancel current query, don't exit REPL)
+- [x] Launch REPL when `esql` is invoked with no subcommand (interactive TTY only; non-TTY shows help)
+- [x] Prompt: `esql> ` (continuation: `  ...> `)
+- [x] Line editing (arrow keys, home/end, ctrl-a/e) via `peterh/liner`
+- [x] Command history (persisted to `~/.esql_history`)
+- [x] Multiline query input (lines ending with `|` or `\` continue on the next line)
+- [x] Display query execution time after each result (ES `took` + client round-trip)
+- [x] Graceful Ctrl-C (cancel current input, don't exit REPL)
+- [x] Ctrl-D to exit cleanly
+- [x] Cluster info banner on connect (node name, version, cluster name)
 
 ### REPL commands
 
-- [ ] `\q` or `exit` — quit
-- [ ] `\f table|json|csv` — switch output format
-- [ ] `\timing` — toggle query duration display
-- [ ] `\clear` — clear screen
-- [ ] `\d` — list indices (reuse `esql indices` logic)
-- [ ] `\d <index>` — show fields for an index (reuse `esql fields` logic)
+- [x] `\q` or `exit` — quit
+- [x] `\f table|json|csv|tsv` — switch output format (shows current format when called with no arg)
+- [x] `\timing` — toggle query duration display
+- [x] `\clear` — clear screen
+- [x] `\d` — list indices (excludes system dot-prefixed indices)
+- [x] `\d <index>` — show fields for an index (also caches fields for completion)
+- [x] `\h` — show help with all commands and keyboard shortcuts
+- [x] `\refresh` — refresh index list and clear field cache
 
 ### REPL autocompletion & syntax awareness
 
-Tab completion and syntax hints for the full ES|QL language. The CLI sends queries verbatim to Elasticsearch (no client-side parsing), but the REPL should know the language vocabulary for a good interactive experience.
+Context-aware tab completion for the full ES|QL language. The CLI sends queries verbatim to Elasticsearch (no client-side parsing), but the REPL knows the language vocabulary for a good interactive experience.
 
-- [ ] Tab completion for index names (fetched from cluster on connect)
-- [ ] Tab completion for field names (fetched when an index is referenced)
-- [ ] Tab completion for ES|QL commands, keywords, operators, and functions (lists below)
+- [x] Tab completion for index names (fetched from cluster on connect, excludes dot-prefixed system indices)
+- [x] Tab completion for field names (lazy-fetched per index on first tab, cached; also pre-fetched after query execution)
+- [x] Tab completion for ES|QL commands, keywords, operators, and functions (lists below)
+- [x] Context-aware suggestions: source commands at start, processing commands after `|`, index names after `FROM`, aggregation functions in `STATS`, field names + functions in `WHERE`/`EVAL`, sort modifiers after `SORT`, etc.
+- [x] Metacommand completion (`\q`, `\f`, `\timing`, `\clear`, `\d`, `\h`, `\refresh`)
 
 #### ES|QL keyword reference (for autocompletion)
 
