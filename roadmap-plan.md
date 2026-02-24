@@ -214,7 +214,7 @@ Make writing and re-running queries frictionless.
 
 - [x] **Saved queries / bookmarks** — `esql save "error-spike" 'FROM logs-* | ...'` persists named queries to `~/.esql.yaml` (or a separate `~/.esql_queries.yaml`). `esql run error-spike` executes them. `esql queries list` shows saved queries.
 - [x] **Query parameterization** — support `{{param}}` placeholders in saved queries: `esql run error-spike --param index=logs-* --param min_status=500`. Also works inline: `esql query 'FROM {{index}} | WHERE status >= {{min}}' --param index=logs-* --param min=500`
-- [ ] **Watch mode** — `esql watch 'FROM metrics | STATS avg(cpu) BY host' --every 5s` re-runs a query on an interval and refreshes the table in place. Useful for live monitoring in a terminal.
+- [x] **Watch mode** — `esql watch 'FROM metrics | STATS avg(cpu) BY host' --every 5s` re-runs a query on an interval and refreshes the table in place. Useful for live monitoring in a terminal.
 - [ ] **Dry-run / generate curl** — `esql query --dry-run '...'` prints the equivalent `curl` command instead of executing. Useful for sharing with colleagues or debugging outside the CLI.
 
 ---
