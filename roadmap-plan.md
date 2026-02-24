@@ -20,26 +20,26 @@ The project skeleton is in place. Nothing executes real queries yet.
 
 ---
 
-## Phase 1: Core Query Execution
+## Phase 1: Core Query Execution [DONE]
 
 Wire the `esql query` command end-to-end so it actually hits Elasticsearch and returns results.
 
-- [ ] Connect `cmd/query.go` → `internal/config` → `internal/client` → `internal/formatter`
-- [ ] POST the user's query string to `POST /_query` on the configured cluster
-- [ ] Parse the ES|QL columnar response (`columns` + `values`)
-- [ ] Render results in the chosen format (`--format table|json|csv`)
-- [ ] Handle ES error responses gracefully (surface the `root_cause` message)
-- [ ] Exit code: 0 on success, 1 on query/connection error
+- [x] Connect `cmd/query.go` → `internal/config` → `internal/client` → `internal/formatter`
+- [x] POST the user's query string to `POST /_query` on the configured cluster
+- [x] Parse the ES|QL columnar response (`columns` + `values`)
+- [x] Render results in the chosen format (`--format table|json|csv|tsv`)
+- [x] Handle ES error responses gracefully (surface the `root_cause` message)
+- [x] Exit code: 0 on success, 1 on query/connection error
 
 ### Pipe-friendly output
 
 The tool must behave well in unix pipelines from day one:
 
-- [ ] Detect TTY vs pipe (`os.Stdout` is a terminal or not)
-- [ ] When piped, default to **no headers, no borders** (raw tab-separated or CSV) so output is `grep`/`awk`/`cut`-friendly
-- [ ] `--format` flag overrides auto-detection
-- [ ] No color codes when piped (only when TTY)
-- [ ] Support `--no-header` flag to suppress column headers in any format
+- [x] Detect TTY vs pipe (`os.Stdout` is a terminal or not)
+- [x] When piped, default to **no headers, no borders** (raw tab-separated) so output is `grep`/`awk`/`cut`-friendly
+- [x] `--format` flag overrides auto-detection
+- [x] No color codes when piped (only when TTY)
+- [x] Support `--no-header` flag to suppress column headers in any format
 
 **Goal:** after Phase 1, this works:
 
@@ -74,7 +74,7 @@ A `psql`-style interactive shell for exploratory queries.
 
 Make it easy to work with multiple clusters.
 
-- [ ] `esql configure` — interactive setup wizard (prompt for host, auth method, test connection)
+- [ ] `esql init` — interactive setup wizard (prompt for host, auth method, test connection)
 - [ ] Named profiles in config file:
   ```yaml
   profiles:
