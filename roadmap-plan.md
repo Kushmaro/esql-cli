@@ -81,22 +81,24 @@ Help users discover what they can query.
 - [x] `esql indices` — list available indices (via `_cat/indices`, supports wildcard pattern filter)
 - [x] `esql fields <index>` — show field names and types for an index (via `<index>/_mapping`, flattens nested/multi-fields)
 - [x] Output format support (`--format table|json|csv|tsv`, `--no-header`) on both commands
+- [ ] support streams
+- [ ] support datastreams
 
 ---
 
-## Phase 4: Unix Integration & Scripting
+## Phase 4: Unix Integration & Scripting [DONE]
 
 Make `esql` a first-class citizen in shell pipelines and automation.
 
-- [ ] **Stdin query input** — read query from stdin: `echo "FROM logs | LIMIT 5" | esql query -`
-- [ ] **TSV output** — tab-separated (default when piped), clean for `cut`, `awk`, `sort`
-- [ ] **Streaming / chunked output** — start printing rows as they arrive for large result sets
-- [ ] **`--quiet`** — suppress everything except data (no banners, no timing, no warnings)
-- [ ] **`--delimiter`** — custom field delimiter for flat output
-- [ ] **`--columns`** — client-side column selection (like `cut` but aware of column names)
-- [ ] **Exit codes** — structured: 0 = success, 1 = query error, 2 = connection error, 3 = config error
-- [ ] **`--timeout`** — per-query timeout override
-- [ ] **Multi-query from file** — `esql query -f queries.esql` runs each query separated by `;` or blank lines
+- [x] **Stdin query input** — read query from stdin: `echo "FROM logs | LIMIT 5" | esql query -`
+- [x] **TSV output** — tab-separated (default when piped), clean for `cut`, `awk`, `sort`
+- [x] **`--quiet`** — suppress everything except data (no banners, no timing, no warnings)
+- [x] **`--delimiter`** — custom field delimiter for flat output
+- [x] **`--columns`** — client-side column selection (like `cut` but aware of column names)
+- [x] **Exit codes** — structured: 0 = success, 1 = query error, 2 = connection error, 3 = config error
+- [x] **`--timeout`** — per-query timeout override
+- [x] **Multi-query from file** — `esql query --file queries.esql` runs each query separated by `;`
+- [ ] **Streaming / chunked output** — start printing rows as they arrive for large result sets (deferred — requires ES async query API)
 
 **Goal:** after Phase 4, this all works naturally:
 

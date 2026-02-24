@@ -17,6 +17,7 @@ type Config struct {
 	Password string
 	APIKey   string
 	Insecure bool
+	Timeout  time.Duration
 }
 
 type Client struct {
@@ -39,7 +40,15 @@ type Column struct {
 	Type string `json:"type"`
 }
 
-// ESError represents a structured Elasticsearch error response.
+// ConnectionError wraps errors caused by network/connection failures.
+type ConnectionError struct {
+	Err error
+}
+
+func (e *ConnectionError) Error() string { return e.Err.Error() }
+func (e *ConnectionError) Unwrap() error { return e.Err }
+
+// ESError represents a structured Elasticsearch error response (query errors).
 type ESError struct {
 	Status int
 	Type   string
@@ -55,6 +64,11 @@ func (e *ESError) Error() string {
 }
 
 func New(cfg Config) *Client {
+	timeout := cfg.Timeout
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
+
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: cfg.Insecure,
@@ -64,7 +78,7 @@ func New(cfg Config) *Client {
 	return &Client{
 		httpClient: &http.Client{
 			Transport: transport,
-			Timeout:   30 * time.Second,
+			Timeout:   timeout,
 		},
 		config: cfg,
 	}
@@ -139,7 +153,7 @@ func (c *Client) Query(esql string) (*QueryResponse, error) {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("connection failed: %w", err)
+		return nil, &ConnectionError{Err: fmt.Errorf("connection failed: %w", err)}
 	}
 	defer resp.Body.Close()
 
@@ -280,7 +294,7 @@ func (c *Client) doGet(path string) ([]byte, error) {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("connection failed: %w", err)
+		return nil, &ConnectionError{Err: fmt.Errorf("connection failed: %w", err)}
 	}
 	defer resp.Body.Close()
 
