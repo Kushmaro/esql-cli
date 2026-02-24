@@ -38,7 +38,7 @@ Examples:
 }
 
 func init() {
-	queryCmd.Flags().StringP("format", "f", "", "output format: table, json, csv, tsv (default: table for TTY, tsv for pipes)")
+	queryCmd.Flags().StringP("format", "f", "", "output format: table, json, ndjson, csv, tsv, parquet (default: table for TTY, tsv for pipes)")
 	queryCmd.Flags().Bool("no-header", false, "suppress column headers in output")
 	queryCmd.Flags().Bool("quiet", false, "suppress all non-data output (timing, row counts)")
 	queryCmd.Flags().String("delimiter", "", "custom field delimiter for flat output (implies tsv format)")
@@ -46,6 +46,7 @@ func init() {
 	queryCmd.Flags().Duration("timeout", 0, "per-query timeout (e.g. 60s, 5m)")
 	queryCmd.Flags().String("file", "", "read queries from file (separated by ; or blank lines)")
 	queryCmd.Flags().StringArray("param", nil, "parameter in key=value format for {{key}} placeholders")
+	queryCmd.Flags().StringP("output", "o", "", "write results to file instead of stdout")
 	rootCmd.AddCommand(queryCmd)
 }
 
@@ -97,6 +98,13 @@ func runQuery(cmd *cobra.Command, args []string) error {
 		Quiet:     quiet,
 	}
 
+	output, _ := cmd.Flags().GetString("output")
+	w, cleanup, err := resolveWriter(output)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
 	params, _ := cmd.Flags().GetStringArray("param")
 
 	for i, query := range queries {
@@ -106,7 +114,7 @@ func runQuery(cmd *cobra.Command, args []string) error {
 				return err
 			}
 		}
-		if err := executeOne(c, query, opts, quiet); err != nil {
+		if err := executeOne(w, c, query, opts, quiet); err != nil {
 			if len(queries) > 1 {
 				fmt.Fprintf(os.Stderr, "Error in query %d: %s\n", i+1, err)
 				continue
@@ -119,16 +127,20 @@ func runQuery(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if output != "" && !quiet {
+		fmt.Fprintf(os.Stderr, "Results written to %s\n", output)
+	}
+
 	return nil
 }
 
-func executeOne(c *client.Client, query string, opts formatter.Options, quiet bool) error {
+func executeOne(w io.Writer, c *client.Client, query string, opts formatter.Options, quiet bool) error {
 	resp, err := c.Query(query)
 	if err != nil {
 		return err
 	}
 
-	if err := formatter.Format(os.Stdout, resp, opts); err != nil {
+	if err := formatter.Format(w, resp, opts); err != nil {
 		return err
 	}
 
@@ -137,6 +149,17 @@ func executeOne(c *client.Client, query string, opts formatter.Options, quiet bo
 	}
 
 	return nil
+}
+
+func resolveWriter(output string) (io.Writer, func(), error) {
+	if output == "" {
+		return os.Stdout, func() {}, nil
+	}
+	f, err := os.Create(output)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating output file: %w", err)
+	}
+	return f, func() { f.Close() }, nil
 }
 
 func resolveQueries(args []string, file string) ([]string, error) {

@@ -47,12 +47,16 @@ func Format(w io.Writer, resp *client.QueryResponse, opts Options) error {
 		return formatTable(w, filtered, opts)
 	case "json":
 		return formatJSON(w, filtered)
+	case "ndjson":
+		return formatNDJSON(w, filtered)
 	case "csv":
 		return formatCSV(w, filtered, opts)
 	case "tsv":
 		return formatDelimited(w, filtered, opts, "\t")
+	case "parquet":
+		return formatParquet(w, filtered)
 	default:
-		return fmt.Errorf("unknown format %q (supported: table, json, csv, tsv)", opts.Format)
+		return fmt.Errorf("unknown format %q (supported: table, json, ndjson, csv, tsv, parquet)", opts.Format)
 	}
 }
 
@@ -182,6 +186,20 @@ func formatCSV(w io.Writer, resp *client.QueryResponse, opts Options) error {
 			record[i] = formatValue(v)
 		}
 		if err := cw.Write(record); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func formatNDJSON(w io.Writer, resp *client.QueryResponse) error {
+	enc := json.NewEncoder(w)
+	for _, vals := range resp.Values {
+		row := make(map[string]interface{}, len(resp.Columns))
+		for j, col := range resp.Columns {
+			row[col.Name] = vals[j]
+		}
+		if err := enc.Encode(row); err != nil {
 			return err
 		}
 	}
