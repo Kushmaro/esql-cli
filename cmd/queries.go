@@ -17,7 +17,7 @@ import (
 var saveCmd = &cobra.Command{
 	Use:   "save <name> <query>",
 	Short: "Save a named query for later use",
-	Long: `Save an ES|QL query with a name so it can be re-run later with 'esql run'.
+	Long: `Save an ES|QL query with a name so it can be re-run later with 'esql queries run'.
 
 Queries are stored in ~/.esql.yaml. If a query with the same name already
 exists it will be overwritten.
@@ -36,6 +36,10 @@ Examples:
 				return fmt.Errorf("it looks like the arguments are swapped — expected: esql save <name> <query>\n  try: esql save %s '%s'", query, name)
 			}
 			return fmt.Errorf("query name %q contains spaces or special characters — use a simple name like 'my-query'", name)
+		}
+
+		if !looksLikeQuery(query) {
+			return fmt.Errorf("query %q doesn't look like a valid ES|QL query — it should start with FROM, ROW, or SHOW", query)
 		}
 
 		cfg, err := config.LoadFileConfig()
@@ -59,7 +63,7 @@ Examples:
 	},
 }
 
-var runCmd = &cobra.Command{
+var queriesRunCmd = &cobra.Command{
 	Use:   "run <name>",
 	Short: "Run a saved query",
 	Long: `Run a previously saved ES|QL query by name.
@@ -68,9 +72,9 @@ Supports the same output flags as 'esql query'. Use --param to fill
 {{placeholder}} values in parameterized queries.
 
 Examples:
-  esql run error-spike
-  esql run error-spike --format json
-  esql run daily-count --param index=logs-2025.* --param window=1 day`,
+  esql queries run error-spike
+  esql queries run error-spike --format json
+  esql queries run daily-count --param index=logs-2025.* --param window=1 day`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE:         runSavedQuery,
@@ -174,20 +178,32 @@ var queriesRemoveCmd = &cobra.Command{
 }
 
 func init() {
-	runCmd.Flags().StringP("format", "f", "", "output format: table, json, csv, tsv")
-	runCmd.Flags().Bool("no-header", false, "suppress column headers")
-	runCmd.Flags().Bool("quiet", false, "suppress all non-data output")
-	runCmd.Flags().String("delimiter", "", "custom field delimiter (implies tsv)")
-	runCmd.Flags().String("columns", "", "comma-separated list of columns to include")
-	runCmd.Flags().Duration("timeout", 0, "per-query timeout (e.g. 60s, 5m)")
-	runCmd.Flags().StringArray("param", nil, "parameter in key=value format for {{key}} placeholders")
+	queriesRunCmd.Flags().StringP("format", "f", "", "output format: table, json, csv, tsv")
+	queriesRunCmd.Flags().Bool("no-header", false, "suppress column headers")
+	queriesRunCmd.Flags().Bool("quiet", false, "suppress all non-data output")
+	queriesRunCmd.Flags().String("delimiter", "", "custom field delimiter (implies tsv)")
+	queriesRunCmd.Flags().String("columns", "", "comma-separated list of columns to include")
+	queriesRunCmd.Flags().Duration("timeout", 0, "per-query timeout (e.g. 60s, 5m)")
+	queriesRunCmd.Flags().StringArray("param", nil, "parameter in key=value format for {{key}} placeholders")
 
 	queriesCmd.AddCommand(queriesListCmd)
 	queriesCmd.AddCommand(queriesRemoveCmd)
+	queriesCmd.AddCommand(queriesRunCmd)
 
 	rootCmd.AddCommand(saveCmd)
-	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(queriesCmd)
+}
+
+// looksLikeQuery checks whether a string looks like a valid ES|QL query
+// by verifying it starts with a known source command.
+func looksLikeQuery(q string) bool {
+	upper := strings.ToUpper(strings.TrimSpace(q))
+	for _, cmd := range []string{"FROM ", "ROW ", "SHOW ", "FROM\t", "ROW\t", "SHOW\t"} {
+		if strings.HasPrefix(upper, cmd) {
+			return true
+		}
+	}
+	return false
 }
 
 func runSavedQuery(cmd *cobra.Command, args []string) error {
