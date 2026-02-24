@@ -10,6 +10,7 @@ import (
 
 	"github.com/Kushmaro/esql-cli/internal/client"
 	"github.com/Kushmaro/esql-cli/internal/config"
+	"github.com/Kushmaro/esql-cli/internal/formatter"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/spf13/cobra"
@@ -25,16 +26,17 @@ type dataEntry struct {
 }
 
 var dataCmd = &cobra.Command{
-	Use:   "data [name] [fields]",
-	Short: "List indices, data streams, and aliases, or inspect fields",
+	Use:   "data [name] [fields|sample]",
+	Short: "List indices, data streams, and aliases, or inspect fields/sample",
 	Long: `List indices, data streams, and aliases on the connected Elasticsearch cluster.
-When called with a name and "fields", shows the field mapping for that
-index, data stream, or alias.
+When called with a name and "fields", shows the field mapping.
+When called with a name and "sample", shows 5 sample rows.
 
 Examples:
   esql data
   esql data 'logs-*'
   esql data logs-generic-default fields
+  esql data logs-generic-default sample
   esql data --format json`,
 	Args:         cobra.RangeArgs(0, 2),
 	SilenceUsage: true,
@@ -50,6 +52,9 @@ func init() {
 func runData(cmd *cobra.Command, args []string) error {
 	if len(args) == 2 && strings.EqualFold(args[1], "fields") {
 		return runDataFields(cmd, args[0])
+	}
+	if len(args) == 2 && strings.EqualFold(args[1], "sample") {
+		return runDataSample(cmd, args[0])
 	}
 
 	pattern := ""
@@ -386,4 +391,33 @@ func runDataFields(cmd *cobra.Command, index string) error {
 	default:
 		return fieldsTable(fields, noHeader)
 	}
+}
+
+func runDataSample(cmd *cobra.Command, index string) error {
+	cfg, err := config.ClientConfig()
+	if err != nil {
+		return err
+	}
+	c := client.New(cfg)
+
+	query := fmt.Sprintf("FROM %s | LIMIT 5", index)
+	resp, err := c.Query(query)
+	if err != nil {
+		return err
+	}
+
+	format, _ := cmd.Flags().GetString("format")
+	if format == "" {
+		if term.IsTerminal(int(os.Stdout.Fd())) {
+			format = "table"
+		} else {
+			format = "tsv"
+		}
+	}
+	noHeader, _ := cmd.Flags().GetBool("no-header")
+
+	return formatter.Format(os.Stdout, resp, formatter.Options{
+		Format:   format,
+		NoHeader: noHeader,
+	})
 }

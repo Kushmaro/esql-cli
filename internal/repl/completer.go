@@ -129,11 +129,17 @@ func (c *completer) wordComplete(line string, pos int) (string, []string, string
 
 	candidates := c.getCandidates(left, head)
 
+	initHighlightSets()
+
 	var matches []string
 	upperPrefix := strings.ToUpper(prefix)
 	for _, cand := range candidates {
 		if strings.HasPrefix(strings.ToUpper(cand), upperPrefix) {
-			matches = append(matches, cand)
+			if functionSet[strings.ToUpper(cand)] {
+				matches = append(matches, cand+"(")
+			} else {
+				matches = append(matches, cand)
+			}
 		}
 	}
 
@@ -285,5 +291,6 @@ func lastWordBoundary(s string) int {
 func metaCommandNames() []string {
 	return []string{
 		"\\q", "\\f", "\\timing", "\\clear", "\\d", "\\h", "\\refresh",
+		"\\sig", "\\sample", "\\s",
 	}
 }
