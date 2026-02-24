@@ -79,10 +79,9 @@ Make it easy to work with multiple clusters.
 Help users discover what they can query.
 
 - [x] `esql indices` — list available indices (via `_cat/indices`, supports wildcard pattern filter)
-- [x] `esql fields <index>` — show field names and types for an index (via `<index>/_mapping`, flattens nested/multi-fields)
-- [x] Output format support (`--format table|json|csv|tsv`, `--no-header`) on both commands
-- [ ] support streams
-- [ ] support datastreams
+- [x] `esql datastreams` (alias: `esql ds`) — list data streams with health, index mode, backing indices, and template (via `_data_stream`)
+- [x] `esql fields <index|datastream>` — show field names and types (via `_mapping`, works with both indices and data stream names)
+- [x] Output format support (`--format table|json|csv|tsv`, `--no-header`) on all commands
 
 ---
 
