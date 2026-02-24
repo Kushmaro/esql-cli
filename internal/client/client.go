@@ -160,6 +160,142 @@ func (c *Client) Query(esql string) (*QueryResponse, error) {
 	return &result, nil
 }
 
+// IndexInfo represents an index entry from _cat/indices.
+type IndexInfo struct {
+	Health    string `json:"health"`
+	Status    string `json:"status"`
+	Index     string `json:"index"`
+	UUID      string `json:"uuid"`
+	DocsCount string `json:"docs.count"`
+	StoreSize string `json:"store.size"`
+}
+
+// FieldInfo represents a flattened field from an index mapping.
+type FieldInfo struct {
+	Name string
+	Type string
+}
+
+// ListIndices returns index metadata via _cat/indices.
+// An optional pattern filters the results (e.g. "logs-*").
+func (c *Client) ListIndices(pattern string) ([]IndexInfo, error) {
+	path := "/_cat/indices"
+	if pattern != "" {
+		path += "/" + pattern
+	}
+	path += "?format=json&h=health,status,index,uuid,docs.count,store.size&s=index"
+
+	body, err := c.doGet(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var indices []IndexInfo
+	if err := json.Unmarshal(body, &indices); err != nil {
+		return nil, fmt.Errorf("parsing indices response: %w", err)
+	}
+
+	return indices, nil
+}
+
+// GetFields returns the flattened field list for an index via _mapping.
+func (c *Client) GetFields(index string) ([]FieldInfo, error) {
+	path := "/" + index + "/_mapping"
+
+	body, err := c.doGet(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw map[string]struct {
+		Mappings struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		} `json:"mappings"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("parsing mapping response: %w", err)
+	}
+
+	var fields []FieldInfo
+	for _, idx := range raw {
+		fields = flattenProperties("", idx.Mappings.Properties, fields)
+		break
+	}
+
+	return fields, nil
+}
+
+func flattenProperties(prefix string, props map[string]json.RawMessage, fields []FieldInfo) []FieldInfo {
+	for name, rawField := range props {
+		fullName := name
+		if prefix != "" {
+			fullName = prefix + "." + name
+		}
+
+		var field struct {
+			Type       string                     `json:"type"`
+			Properties map[string]json.RawMessage `json:"properties"`
+			Fields     map[string]json.RawMessage `json:"fields"`
+		}
+		if err := json.Unmarshal(rawField, &field); err != nil {
+			continue
+		}
+
+		if field.Type != "" {
+			fields = append(fields, FieldInfo{Name: fullName, Type: field.Type})
+		}
+
+		if field.Properties != nil {
+			if field.Type == "" {
+				fields = append(fields, FieldInfo{Name: fullName, Type: "object"})
+			}
+			fields = flattenProperties(fullName, field.Properties, fields)
+		}
+
+		for subName, subRaw := range field.Fields {
+			var sub struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(subRaw, &sub); err == nil && sub.Type != "" {
+				fields = append(fields, FieldInfo{Name: fullName + "." + subName, Type: sub.Type})
+			}
+		}
+	}
+	return fields
+}
+
+// doGet performs an authenticated GET request and returns the response body.
+func (c *Client) doGet(path string) ([]byte, error) {
+	url := strings.TrimRight(c.config.Host, "/") + path
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	if c.config.APIKey != "" {
+		req.Header.Set("Authorization", "ApiKey "+c.config.APIKey)
+	} else if c.config.User != "" {
+		req.SetBasicAuth(c.config.User, c.config.Password)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("connection failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, parseESError(resp.StatusCode, body)
+	}
+
+	return body, nil
+}
+
 func parseESError(status int, body []byte) *ESError {
 	var parsed struct {
 		Error struct {

@@ -6,6 +6,7 @@
 *.dylib
 
 # Build output
+/esql
 /esql-cli
 /esql-cli.exe
 dist/
