@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"syscall"
 )
@@ -115,6 +116,9 @@ func esErrorHint(err *ESError) string {
 		return "Request timed out on the server — try a simpler query, add a LIMIT, or increase --timeout."
 	case http.StatusBadRequest:
 		if strings.Contains(err.Type, "parsing_exception") || strings.Contains(err.Type, "verification_exception") {
+			if hint := parsingSuggestion(err.Reason); hint != "" {
+				return hint
+			}
 			return "Query syntax error — check your ES|QL query. Run 'esql' interactively for tab completion."
 		}
 	case http.StatusServiceUnavailable:
@@ -123,4 +127,98 @@ func esErrorHint(err *ESError) string {
 		return "Too many requests (429) — the cluster is overloaded. Wait a moment and try again."
 	}
 	return ""
+}
+
+var mismatchRe = regexp.MustCompile(`mismatched input '([^']+)' expecting \{([^}]+)\}`)
+var unknownFuncRe = regexp.MustCompile(`Unknown function \[([^\]]+)\]`)
+var unknownColRe = regexp.MustCompile(`Unknown column \[([^\]]+)\]`)
+
+func parsingSuggestion(reason string) string {
+	if m := mismatchRe.FindStringSubmatch(reason); len(m) == 3 {
+		typo := m[1]
+		candidates := parseExpectedTokens(m[2])
+		if best, dist := closestMatch(typo, candidates); dist <= maxTypoDistance(typo) {
+			return fmt.Sprintf("Did you mean %s?", strings.ToUpper(best))
+		}
+	}
+
+	if m := unknownFuncRe.FindStringSubmatch(reason); len(m) == 2 {
+		return fmt.Sprintf("Unknown function %q — check spelling or run 'esql' interactively for tab completion.", m[1])
+	}
+
+	if m := unknownColRe.FindStringSubmatch(reason); len(m) == 2 {
+		return fmt.Sprintf("Unknown column %q — run 'esql data <index> fields' to see available fields.", m[1])
+	}
+
+	return ""
+}
+
+func parseExpectedTokens(raw string) []string {
+	var tokens []string
+	for _, tok := range strings.Split(raw, ",") {
+		tok = strings.TrimSpace(tok)
+		tok = strings.Trim(tok, "'\"")
+		if tok != "" {
+			tokens = append(tokens, tok)
+		}
+	}
+	return tokens
+}
+
+// maxTypoDistance returns the maximum edit distance we consider a plausible typo.
+func maxTypoDistance(s string) int {
+	n := len(s)
+	if n <= 3 {
+		return 1
+	}
+	if n <= 6 {
+		return 2
+	}
+	return 3
+}
+
+func closestMatch(input string, candidates []string) (string, int) {
+	best := ""
+	bestDist := len(input) + 1
+	lower := strings.ToLower(input)
+
+	for _, c := range candidates {
+		d := levenshtein(lower, strings.ToLower(c))
+		if d < bestDist {
+			bestDist = d
+			best = c
+		}
+	}
+	return best, bestDist
+}
+
+func levenshtein(a, b string) int {
+	la, lb := len(a), len(b)
+	if la == 0 {
+		return lb
+	}
+	if lb == 0 {
+		return la
+	}
+
+	prev := make([]int, lb+1)
+	curr := make([]int, lb+1)
+
+	for j := 0; j <= lb; j++ {
+		prev[j] = j
+	}
+
+	for i := 1; i <= la; i++ {
+		curr[0] = i
+		for j := 1; j <= lb; j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			curr[j] = min(curr[j-1]+1, min(prev[j]+1, prev[j-1]+cost))
+		}
+		prev, curr = curr, prev
+	}
+
+	return prev[lb]
 }
