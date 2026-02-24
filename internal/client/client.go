@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -23,21 +24,34 @@ type Client struct {
 	config     Config
 }
 
-// QueryRequest is the body sent to the ES|QL _query endpoint.
 type QueryRequest struct {
-	Query  string `json:"query"`
-	Format string `json:"format,omitempty"`
+	Query string `json:"query"`
 }
 
-// QueryResponse represents the ES|QL _query response.
 type QueryResponse struct {
 	Columns []Column        `json:"columns"`
 	Values  [][]interface{} `json:"values"`
+	Took    int             `json:"took"`
 }
 
 type Column struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
+}
+
+// ESError represents a structured Elasticsearch error response.
+type ESError struct {
+	Status int
+	Type   string
+	Reason string
+	Raw    string
+}
+
+func (e *ESError) Error() string {
+	if e.Type != "" && e.Reason != "" {
+		return fmt.Sprintf("[%d] %s: %s", e.Status, e.Type, e.Reason)
+	}
+	return fmt.Sprintf("[%d] %s", e.Status, e.Raw)
 }
 
 func New(cfg Config) *Client {
@@ -56,7 +70,6 @@ func New(cfg Config) *Client {
 	}
 }
 
-// Query executes an ES|QL query and returns the parsed response.
 func (c *Client) Query(esql string) (*QueryResponse, error) {
 	reqBody := QueryRequest{Query: esql}
 	body, err := json.Marshal(reqBody)
@@ -64,7 +77,7 @@ func (c *Client) Query(esql string) (*QueryResponse, error) {
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/_query", c.config.Host)
+	url := strings.TrimRight(c.config.Host, "/") + "/_query"
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
@@ -80,7 +93,7 @@ func (c *Client) Query(esql string) (*QueryResponse, error) {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("executing request: %w", err)
+		return nil, fmt.Errorf("connection failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -90,7 +103,7 @@ func (c *Client) Query(esql string) (*QueryResponse, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("elasticsearch returned %d: %s", resp.StatusCode, string(respBody))
+		return nil, parseESError(resp.StatusCode, respBody)
 	}
 
 	var result QueryResponse
@@ -99,4 +112,29 @@ func (c *Client) Query(esql string) (*QueryResponse, error) {
 	}
 
 	return &result, nil
+}
+
+func parseESError(status int, body []byte) *ESError {
+	var parsed struct {
+		Error struct {
+			RootCause []struct {
+				Type   string `json:"type"`
+				Reason string `json:"reason"`
+			} `json:"root_cause"`
+			Type   string `json:"type"`
+			Reason string `json:"reason"`
+		} `json:"error"`
+	}
+
+	if err := json.Unmarshal(body, &parsed); err == nil && parsed.Error.Type != "" {
+		reason := parsed.Error.Reason
+		typ := parsed.Error.Type
+		if len(parsed.Error.RootCause) > 0 {
+			reason = parsed.Error.RootCause[0].Reason
+			typ = parsed.Error.RootCause[0].Type
+		}
+		return &ESError{Status: status, Type: typ, Reason: reason, Raw: string(body)}
+	}
+
+	return &ESError{Status: status, Raw: string(body)}
 }
