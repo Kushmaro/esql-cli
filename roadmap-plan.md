@@ -51,26 +51,7 @@ esql query 'FROM employees | KEEP name, salary | SORT salary DESC | LIMIT 5'
 
 ---
 
-## Phase 2: Interactive REPL
-
-A `psql`-style interactive shell for exploratory queries.
-
-- [ ] Launch REPL when `esql` is invoked with no subcommand (or `esql repl`)
-- [ ] Prompt: `esql> `
-- [ ] Line editing (arrow keys, home/end, ctrl-a/e)
-- [ ] Command history (persisted to `~/.esql_history`)
-- [ ] Multiline query input (detect incomplete pipes, allow `\` continuation)
-- [ ] Special REPL commands:
-  - `\q` or `exit` — quit
-  - `\f table|json|csv` — switch output format
-  - `\timing` — toggle query duration display
-  - `\clear` — clear screen
-- [ ] Display query execution time after each result
-- [ ] Graceful Ctrl-C (cancel current query, don't exit REPL)
-
----
-
-## Phase 3: Connection Management [DONE]
+## Phase 2: Connection Management [DONE]
 
 Make it easy to work with multiple clusters.
 
@@ -93,72 +74,17 @@ Make it easy to work with multiple clusters.
 
 ---
 
-## Phase 4: Index Introspection
+## Phase 3: Index Introspection [DONE]
 
 Help users discover what they can query.
 
-- [ ] `esql indices` — list available indices (hit `_cat/indices` or `_resolve/index/*`)
-- [ ] `esql fields <index>` — show field names and types for an index (hit `<index>/_mapping`)
-- [ ] In REPL: `\d` to list indices, `\d <index>` to show fields (like `psql`'s `\dt` and `\d`)
-- [ ] Tab completion for index names in the REPL (after fetching index list)
+- [x] `esql indices` — list available indices (via `_cat/indices`, supports wildcard pattern filter)
+- [x] `esql fields <index>` — show field names and types for an index (via `<index>/_mapping`, flattens nested/multi-fields)
+- [x] Output format support (`--format table|json|csv|tsv`, `--no-header`) on both commands
 
 ---
 
-## Phase 5: Full ES|QL Language Coverage
-
-Ensure every ES|QL construct works through the CLI. The CLI passes queries verbatim to Elasticsearch, so language support is mostly about the REPL experience — autocompletion, syntax hints, validation feedback.
-
-### Source commands
-- [ ] `FROM` — works natively (passthrough)
-- [ ] `ROW` — works natively
-- [ ] `SHOW` — works natively
-
-### Processing commands
-- [ ] `WHERE` — works natively
-- [ ] `EVAL` — works natively
-- [ ] `STATS ... BY` — works natively (including per-agg `WHERE`)
-- [ ] `SORT` — works natively
-- [ ] `LIMIT` — works natively
-- [ ] `KEEP` — works natively
-- [ ] `DROP` — works natively
-- [ ] `RENAME` — works natively
-- [ ] `DISSECT` — works natively
-- [ ] `GROK` — works natively
-- [ ] `ENRICH` — works natively (requires server-side enrich policy)
-- [ ] `LOOKUP JOIN` — works natively
-- [ ] `MV_EXPAND` — works natively
-- [ ] `INLINE STATS` — works natively
-- [ ] `CHANGE_POINT` — works natively
-- [ ] `FORK` — works natively (preview)
-- [ ] `FUSE` — works natively (preview)
-- [ ] `SAMPLE` — works natively (preview)
-- [ ] `RERANK` — works natively (preview)
-- [ ] `COMPLETION` — works natively (preview)
-
-### Operators
-- [ ] Binary: `==`, `!=`, `<`, `<=`, `>`, `>=`, `+`, `-`, `*`, `/`, `%`
-- [ ] Logical: `AND`, `OR`, `NOT`
-- [ ] Null: `IS NULL`, `IS NOT NULL`
-- [ ] Pattern: `LIKE`, `RLIKE`, `IN`
-- [ ] Match: `:` (full-text match)
-- [ ] Cast: `::` (type conversion)
-
-### Functions (all passthrough — key ones to validate)
-- [ ] Aggregation: `AVG`, `COUNT`, `COUNT_DISTINCT`, `MAX`, `MIN`, `SUM`, `MEDIAN`, `PERCENTILE`, `STD_DEV`, `VARIANCE`, `TOP`, `VALUES`, `FIRST`, `LAST`
-- [ ] Grouping: `BUCKET`, `TBUCKET`, `CATEGORIZE`
-- [ ] Conditional: `CASE`, `COALESCE`, `GREATEST`, `LEAST`
-- [ ] Date/time: `DATE_DIFF`, `DATE_EXTRACT`, `DATE_FORMAT`, `DATE_PARSE`, `DATE_TRUNC`, `NOW`
-- [ ] String: `CONCAT`, `LENGTH`, `SUBSTRING`, `LEFT`, `RIGHT`, `TRIM`, `TO_LOWER`, `TO_UPPER`, `SPLIT`, `REPLACE`, `STARTS_WITH`, `ENDS_WITH`, `CONTAINS`
-- [ ] Math: `ABS`, `ROUND`, `CEIL`, `FLOOR`, `SQRT`, `POW`, `LOG`, `LOG10`
-- [ ] Type conversion: `TO_INTEGER`, `TO_DOUBLE`, `TO_STRING`, `TO_BOOLEAN`, `TO_DATETIME`, `TO_IP`, `TO_LONG`, `TO_VERSION`
-- [ ] Multivalue: `MV_AVG`, `MV_COUNT`, `MV_FIRST`, `MV_LAST`, `MV_MAX`, `MV_MIN`, `MV_SUM`, `MV_SORT`, `MV_CONCAT`, `MV_EXPAND`
-- [ ] Search: `MATCH`, `MATCH_PHRASE`, `KQL`, `QSTR`
-
-> **Note:** Since the CLI sends the query string verbatim to Elasticsearch, all commands/functions/operators work as long as the server supports them. The checklist above tracks **validation and testing**, not implementation. The real work is in Phases 1–4.
-
----
-
-## Phase 6: Unix Integration & Scripting
+## Phase 4: Unix Integration & Scripting
 
 Make `esql` a first-class citizen in shell pipelines and automation.
 
@@ -172,7 +98,7 @@ Make `esql` a first-class citizen in shell pipelines and automation.
 - [ ] **`--timeout`** — per-query timeout override
 - [ ] **Multi-query from file** — `esql query -f queries.esql` runs each query separated by `;` or blank lines
 
-**Goal:** after Phase 6, this all works naturally:
+**Goal:** after Phase 4, this all works naturally:
 
 ```bash
 # Pipeline: query → filter → aggregate in bash
@@ -193,7 +119,7 @@ esql query -f dashboard_queries.esql --format json > results.json
 
 ---
 
-## Phase 7: Polish & Distribution
+## Phase 5: Polish & Distribution
 
 - [ ] Shell completion scripts (Cobra gives us these for free, just wire them up)
 - [ ] `--version` flag with build info (git sha, build date)
@@ -203,6 +129,75 @@ esql query -f dashboard_queries.esql --format json > results.json
 - [ ] Man page generation (Cobra supports this)
 - [ ] Error messages with actionable suggestions (e.g., "connection refused — is --host correct?")
 - [ ] `--verbose` / `--debug` flag for request/response tracing
+
+---
+
+## Phase 6: Interactive REPL
+
+A `psql`-style interactive shell for exploratory queries.
+
+### Core REPL
+
+- [ ] Launch REPL when `esql` is invoked with no subcommand (or `esql repl`)
+- [ ] Prompt: `esql> `
+- [ ] Line editing (arrow keys, home/end, ctrl-a/e)
+- [ ] Command history (persisted to `~/.esql_history`)
+- [ ] Multiline query input (detect incomplete pipes, allow `\` continuation)
+- [ ] Display query execution time after each result
+- [ ] Graceful Ctrl-C (cancel current query, don't exit REPL)
+
+### REPL commands
+
+- [ ] `\q` or `exit` — quit
+- [ ] `\f table|json|csv` — switch output format
+- [ ] `\timing` — toggle query duration display
+- [ ] `\clear` — clear screen
+- [ ] `\d` — list indices (reuse `esql indices` logic)
+- [ ] `\d <index>` — show fields for an index (reuse `esql fields` logic)
+
+### REPL autocompletion & syntax awareness
+
+Tab completion and syntax hints for the full ES|QL language. The CLI sends queries verbatim to Elasticsearch (no client-side parsing), but the REPL should know the language vocabulary for a good interactive experience.
+
+- [ ] Tab completion for index names (fetched from cluster on connect)
+- [ ] Tab completion for field names (fetched when an index is referenced)
+- [ ] Tab completion for ES|QL commands, keywords, operators, and functions (lists below)
+
+#### ES|QL keyword reference (for autocompletion)
+
+**Source commands:** `FROM`, `ROW`, `SHOW`, `TS`
+
+**Processing commands:** `WHERE`, `EVAL`, `STATS`, `SORT`, `LIMIT`, `KEEP`, `DROP`, `RENAME`, `DISSECT`, `GROK`, `ENRICH`, `LOOKUP JOIN`, `MV_EXPAND`, `INLINE STATS`, `CHANGE_POINT`, `FORK`, `FUSE`, `SAMPLE`, `RERANK`, `COMPLETION`
+
+**Clauses & keywords:** `BY`, `AS`, `ON`, `WITH`, `METADATA`, `ASC`, `DESC`, `NULLS FIRST`, `NULLS LAST`, `AND`, `OR`, `NOT`, `IN`, `LIKE`, `RLIKE`, `IS NULL`, `IS NOT NULL`, `TRUE`, `FALSE`, `NULL`, `INFO`
+
+**Operators:** `==`, `!=`, `<`, `<=`, `>`, `>=`, `+`, `-`, `*`, `/`, `%`, `:` (match), `::` (cast)
+
+**Aggregation functions:** `ABSENT`, `AVG`, `COUNT`, `COUNT_DISTINCT`, `FIRST`, `LAST`, `MAX`, `MEDIAN`, `MEDIAN_ABSOLUTE_DEVIATION`, `MIN`, `PERCENTILE`, `PRESENT`, `SAMPLE`, `ST_CENTROID_AGG`, `ST_EXTENT_AGG`, `STD_DEV`, `SUM`, `TOP`, `VALUES`, `VARIANCE`, `WEIGHTED_AVG`
+
+**Time series aggregation functions:** `ABSENT_OVER_TIME`, `AVG_OVER_TIME`, `COUNT_OVER_TIME`, `COUNT_DISTINCT_OVER_TIME`, `DELTA`, `DERIV`, `FIRST_OVER_TIME`, `IDELTA`, `INCREASE`, `IRATE`, `LAST_OVER_TIME`, `MAX_OVER_TIME`, `MIN_OVER_TIME`, `PERCENTILE_OVER_TIME`, `PRESENT_OVER_TIME`, `RATE`, `STDDEV_OVER_TIME`, `SUM_OVER_TIME`, `VARIANCE_OVER_TIME`
+
+**Grouping functions:** `BUCKET`, `TBUCKET`, `CATEGORIZE`
+
+**Conditional functions:** `CASE`, `COALESCE`, `GREATEST`, `LEAST`, `CLAMP`, `CLAMP_MIN`, `CLAMP_MAX`
+
+**Date/time functions:** `DATE_DIFF`, `DATE_EXTRACT`, `DATE_FORMAT`, `DATE_PARSE`, `DATE_TRUNC`, `DAY_NAME`, `MONTH_NAME`, `NOW`, `TRANGE`
+
+**String functions:** `BIT_LENGTH`, `BYTE_LENGTH`, `CHUNK`, `CONCAT`, `CONTAINS`, `ENDS_WITH`, `FROM_BASE64`, `HASH`, `LEFT`, `LENGTH`, `LOCATE`, `LTRIM`, `MD5`, `REPEAT`, `REPLACE`, `REVERSE`, `RIGHT`, `RTRIM`, `SHA1`, `SHA256`, `SPACE`, `SPLIT`, `STARTS_WITH`, `SUBSTRING`, `TO_BASE64`, `TO_LOWER`, `TO_UPPER`, `TRIM`, `URL_DECODE`, `URL_ENCODE`, `URL_ENCODE_COMPONENT`
+
+**Math functions:** `ABS`, `ACOS`, `ACOSH`, `ASIN`, `ASINH`, `ATAN`, `ATAN2`, `ATANH`, `CBRT`, `CEIL`, `COPY_SIGN`, `COS`, `COSH`, `E`, `EXP`, `FLOOR`, `HYPOT`, `LOG`, `LOG10`, `PI`, `POW`, `ROUND`, `ROUND_TO`, `SCALB`, `SIGNUM`, `SIN`, `SINH`, `SQRT`, `TAN`, `TANH`, `TAU`
+
+**IP functions:** `CIDR_MATCH`, `IP_PREFIX`
+
+**Spatial functions:** `ST_CONTAINS`, `ST_DISJOINT`, `ST_DISTANCE`, `ST_ENVELOPE`, `ST_GEOHASH`, `ST_GEOHEX`, `ST_GEOTILE`, `ST_INTERSECTS`, `ST_NPOINTS`, `ST_SIMPLIFY`, `ST_WITHIN`, `ST_X`, `ST_XMAX`, `ST_XMIN`, `ST_Y`, `ST_YMAX`, `ST_YMIN`
+
+**Search functions:** `DECAY`, `KQL`, `MATCH`, `MATCH_PHRASE`, `QSTR`, `SCORE`, `TOP_SNIPPETS`
+
+**Dense vector functions:** `KNN`, `TEXT_EMBEDDING`, `V_COSINE`, `V_DOT_PRODUCT`, `V_HAMMING`, `V_L1_NORM`, `V_L2_NORM`
+
+**Type conversion functions:** `TO_BOOLEAN`, `TO_CARTESIANPOINT`, `TO_CARTESIANSHAPE`, `TO_DATEPERIOD`, `TO_DATETIME`, `TO_DATE_NANOS`, `TO_DEGREES`, `TO_DENSE_VECTOR`, `TO_DOUBLE`, `TO_GEOPOINT`, `TO_GEOSHAPE`, `TO_INTEGER`, `TO_IP`, `TO_LONG`, `TO_RADIANS`, `TO_STRING`, `TO_TIMEDURATION`, `TO_UNSIGNED_LONG`, `TO_VERSION`
+
+**Multivalue functions:** `MV_APPEND`, `MV_AVG`, `MV_CONCAT`, `MV_CONTAINS`, `MV_COUNT`, `MV_DEDUPE`, `MV_FIRST`, `MV_INTERSECTION`, `MV_INTERSECTS`, `MV_LAST`, `MV_MAX`, `MV_MEDIAN`, `MV_MEDIAN_ABSOLUTE_DEVIATION`, `MV_MIN`, `MV_PERCENTILE`, `MV_PSERIES_WEIGHTED_SUM`, `MV_SLICE`, `MV_SORT`, `MV_SUM`, `MV_UNION`, `MV_ZIP`
 
 ---
 
