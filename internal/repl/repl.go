@@ -299,8 +299,19 @@ func (r *REPL) showData() {
 		}
 	}
 
+	// Discover aliases via _resolve/index
+	resolved, resolveErr := r.client.ResolveIndex("")
+	if resolveErr == nil {
+		for _, alias := range resolved.Aliases {
+			if strings.HasPrefix(alias.Name, ".") {
+				continue
+			}
+			entries = append(entries, entry{"alias", "", alias.Name, "", ""})
+		}
+	}
+
 	if len(entries) == 0 {
-		fmt.Fprintln(os.Stderr, "No indices or data streams found.")
+		fmt.Fprintln(os.Stderr, "No indices, data streams, or aliases found.")
 		return
 	}
 
@@ -346,9 +357,15 @@ func (r *REPL) showDataFallback() {
 		}
 		entries = append(entries, entry{"index", idx.Name})
 	}
+	for _, alias := range resolved.Aliases {
+		if strings.HasPrefix(alias.Name, ".") {
+			continue
+		}
+		entries = append(entries, entry{"alias", alias.Name})
+	}
 
 	if len(entries) == 0 {
-		fmt.Fprintln(os.Stderr, "No indices or data streams found.")
+		fmt.Fprintln(os.Stderr, "No indices, data streams, or aliases found.")
 		return
 	}
 

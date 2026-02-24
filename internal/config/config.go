@@ -23,6 +23,7 @@ type Profile struct {
 type FileConfig struct {
 	DefaultProfile string             `yaml:"default_profile,omitempty"`
 	Profiles       map[string]Profile `yaml:"profiles,omitempty"`
+	Queries        map[string]string  `yaml:"queries,omitempty"`
 }
 
 // ClientConfig builds a client.Config from the current Viper state.
@@ -91,7 +92,10 @@ func LoadFileConfig() (*FileConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &FileConfig{Profiles: make(map[string]Profile)}, nil
+			return &FileConfig{
+			Profiles: make(map[string]Profile),
+			Queries:  make(map[string]string),
+		}, nil
 		}
 		return nil, err
 	}
@@ -103,6 +107,9 @@ func LoadFileConfig() (*FileConfig, error) {
 
 	if cfg.Profiles == nil {
 		cfg.Profiles = make(map[string]Profile)
+	}
+	if cfg.Queries == nil {
+		cfg.Queries = make(map[string]string)
 	}
 	return &cfg, nil
 }
@@ -134,4 +141,18 @@ func ListProfiles() ([]string, string, error) {
 		names = append(names, name)
 	}
 	return names, cfg.DefaultProfile, nil
+}
+
+// ListQueryNames returns the names of all saved queries.
+func ListQueryNames() ([]string, error) {
+	cfg, err := LoadFileConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, 0, len(cfg.Queries))
+	for name := range cfg.Queries {
+		names = append(names, name)
+	}
+	return names, nil
 }

@@ -26,10 +26,10 @@ type dataEntry struct {
 
 var dataCmd = &cobra.Command{
 	Use:   "data [name] [fields]",
-	Short: "List indices and data streams, or inspect fields",
-	Long: `List indices and data streams on the connected Elasticsearch cluster.
+	Short: "List indices, data streams, and aliases, or inspect fields",
+	Long: `List indices, data streams, and aliases on the connected Elasticsearch cluster.
 When called with a name and "fields", shows the field mapping for that
-index or data stream.
+index, data stream, or alias.
 
 Examples:
   esql data
@@ -72,7 +72,7 @@ func runData(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(entries) == 0 {
-		fmt.Fprintln(os.Stderr, "No indices or data streams found.")
+		fmt.Fprintln(os.Stderr, "No indices, data streams, or aliases found.")
 		return nil
 	}
 
@@ -204,6 +204,20 @@ func listData(c *client.Client, pattern string) ([]dataEntry, error) {
 		}
 	}
 
+	// Discover aliases via _resolve/index
+	resolved, resolveErr := c.ResolveIndex(pattern)
+	if resolveErr == nil {
+		for _, alias := range resolved.Aliases {
+			if strings.HasPrefix(alias.Name, ".") {
+				continue
+			}
+			entries = append(entries, dataEntry{
+				Type: "alias",
+				Name: alias.Name,
+			})
+		}
+	}
+
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Name < entries[j].Name
 	})
@@ -239,6 +253,16 @@ func listDataFallback(c *client.Client, pattern string) ([]dataEntry, error) {
 			Name:      idx.Name,
 			DocsCount: "n/a",
 			StoreSize: "n/a",
+		})
+	}
+
+	for _, alias := range resolved.Aliases {
+		if strings.HasPrefix(alias.Name, ".") {
+			continue
+		}
+		entries = append(entries, dataEntry{
+			Type: "alias",
+			Name: alias.Name,
 		})
 	}
 

@@ -40,6 +40,15 @@ func (c *completer) loadIndexNames() {
 		}
 	}
 
+	resolved, err := c.client.ResolveIndex("")
+	if err == nil {
+		for _, alias := range resolved.Aliases {
+			if !strings.HasPrefix(alias.Name, ".") {
+				names = append(names, alias.Name)
+			}
+		}
+	}
+
 	seen := make(map[string]bool, len(names))
 	deduped := make([]string, 0, len(names))
 	for _, n := range names {
