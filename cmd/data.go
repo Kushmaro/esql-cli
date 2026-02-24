@@ -25,20 +25,18 @@ type dataEntry struct {
 }
 
 var dataCmd = &cobra.Command{
-	Use:   "data [pattern]",
-	Short: "List indices and data streams",
+	Use:   "data [name] [fields]",
+	Short: "List indices and data streams, or inspect fields",
 	Long: `List indices and data streams on the connected Elasticsearch cluster.
-
-Each entry shows its type (index or data_stream), health, name,
-document count, and store size.
-
-Optionally provide a pattern to filter results (supports wildcards).
+When called with a name and "fields", shows the field mapping for that
+index or data stream.
 
 Examples:
   esql data
   esql data 'logs-*'
+  esql data logs-generic-default fields
   esql data --format json`,
-	Args:         cobra.MaximumNArgs(1),
+	Args:         cobra.RangeArgs(0, 2),
 	SilenceUsage: true,
 	RunE:         runData,
 }
@@ -50,6 +48,10 @@ func init() {
 }
 
 func runData(cmd *cobra.Command, args []string) error {
+	if len(args) == 2 && strings.EqualFold(args[1], "fields") {
+		return runDataFields(cmd, args[0])
+	}
+
 	pattern := ""
 	if len(args) > 0 {
 		pattern = args[0]
@@ -246,4 +248,44 @@ func dataDelimited(entries []dataEntry, delim string, noHeader bool) error {
 		fmt.Println(strings.Join([]string{e.Type, e.Health, e.Name, e.DocsCount, e.StoreSize}, delim))
 	}
 	return nil
+}
+
+func runDataFields(cmd *cobra.Command, index string) error {
+	cfg := config.ClientConfig()
+	c := client.New(cfg)
+
+	fields, err := c.GetFields(index)
+	if err != nil {
+		return err
+	}
+
+	if len(fields) == 0 {
+		fmt.Fprintln(os.Stderr, "No fields found.")
+		return nil
+	}
+
+	sort.Slice(fields, func(i, j int) bool {
+		return fields[i].Name < fields[j].Name
+	})
+
+	format, _ := cmd.Flags().GetString("format")
+	if format == "" {
+		if term.IsTerminal(int(os.Stdout.Fd())) {
+			format = "table"
+		} else {
+			format = "tsv"
+		}
+	}
+	noHeader, _ := cmd.Flags().GetBool("no-header")
+
+	switch strings.ToLower(format) {
+	case "json":
+		return fieldsJSON(fields)
+	case "csv":
+		return fieldsDelimited(fields, ",", noHeader)
+	case "tsv":
+		return fieldsDelimited(fields, "\t", noHeader)
+	default:
+		return fieldsTable(fields, noHeader)
+	}
 }

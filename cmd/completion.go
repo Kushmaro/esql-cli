@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"os"
+	"strings"
 
 	"github.com/Kushmaro/esql-cli/internal/client"
 	"github.com/Kushmaro/esql-cli/internal/config"
@@ -90,11 +91,20 @@ func registerDynamicCompletions() {
 		return formatValues, cobra.ShellCompDirectiveNoFileComp
 	})
 
-	fieldsCmd.ValidArgsFunction = completeIndexNames
-	dataCmd.ValidArgsFunction = completeIndexNames
+	fieldsCmd.ValidArgsFunction = completeDataSourceNames
+
+	dataCmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return completeDataSourceNames(cmd, args, toComplete)
+		}
+		if len(args) == 1 {
+			return []string{"fields"}, cobra.ShellCompDirectiveNoFileComp
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 }
 
-func completeIndexNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+func completeDataSourceNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -103,14 +113,28 @@ func completeIndexNames(cmd *cobra.Command, args []string, toComplete string) ([
 	cfg.Timeout = 5_000_000_000 // 5s for completion
 	c := client.New(cfg)
 
+	seen := make(map[string]bool)
+	var names []string
+
 	indices, err := c.ListIndices("")
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
+	if err == nil {
+		for _, idx := range indices {
+			if !strings.HasPrefix(idx.Index, ".") && !seen[idx.Index] {
+				seen[idx.Index] = true
+				names = append(names, idx.Index)
+			}
+		}
 	}
 
-	names := make([]string, 0, len(indices))
-	for _, idx := range indices {
-		names = append(names, idx.Index)
+	streams, err := c.ListDataStreams("")
+	if err == nil {
+		for _, ds := range streams {
+			if !seen[ds.Name] {
+				seen[ds.Name] = true
+				names = append(names, ds.Name)
+			}
+		}
 	}
+
 	return names, cobra.ShellCompDirectiveNoFileComp
 }
