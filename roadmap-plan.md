@@ -237,9 +237,9 @@ Bring the interactive experience closer to `psql`.
 
 Expand output formats and make `esql` a bridge to other tools.
 
-- [ ] **NDJSON output format** — one JSON object per line (`--format ndjson`). The lingua franca for streaming data into jq, Logstash, custom scripts, and other systems.
-- [ ] **`--output` / `-o` flag** — write results directly to a file while still showing progress/timing on stderr
-- [ ] **Export to Parquet** — `--format parquet` for users who want to pull ES data into pandas, DuckDB, or Spark for offline analysis
+- [x] **NDJSON output format** — one JSON object per line (`--format ndjson`). The lingua franca for streaming data into jq, Logstash, custom scripts, and other systems.
+- [x] **`--output` / `-o` flag** — write results directly to a file while still showing progress/timing on stderr
+- [x] **Export to Parquet** — `--format parquet` for users who want to pull ES data into pandas, DuckDB, or Spark for offline analysis
 - [ ] **Streaming / chunked output** — start printing rows as they arrive for large result sets (requires ES async query API; carried forward from Phase 4)
 
 ---

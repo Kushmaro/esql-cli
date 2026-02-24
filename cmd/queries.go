@@ -178,13 +178,14 @@ var queriesRemoveCmd = &cobra.Command{
 }
 
 func init() {
-	queriesRunCmd.Flags().StringP("format", "f", "", "output format: table, json, csv, tsv")
+	queriesRunCmd.Flags().StringP("format", "f", "", "output format: table, json, ndjson, csv, tsv, parquet")
 	queriesRunCmd.Flags().Bool("no-header", false, "suppress column headers")
 	queriesRunCmd.Flags().Bool("quiet", false, "suppress all non-data output")
 	queriesRunCmd.Flags().String("delimiter", "", "custom field delimiter (implies tsv)")
 	queriesRunCmd.Flags().String("columns", "", "comma-separated list of columns to include")
 	queriesRunCmd.Flags().Duration("timeout", 0, "per-query timeout (e.g. 60s, 5m)")
 	queriesRunCmd.Flags().StringArray("param", nil, "parameter in key=value format for {{key}} placeholders")
+	queriesRunCmd.Flags().StringP("output", "o", "", "write results to file instead of stdout")
 
 	queriesCmd.AddCommand(queriesListCmd)
 	queriesCmd.AddCommand(queriesRemoveCmd)
@@ -266,5 +267,19 @@ func runSavedQuery(cmd *cobra.Command, args []string) error {
 		Quiet:     quiet,
 	}
 
-	return executeOne(c, query, opts, quiet)
+	output, _ := cmd.Flags().GetString("output")
+	w, cleanup, err := resolveWriter(output)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	if err := executeOne(w, c, query, opts, quiet); err != nil {
+		return err
+	}
+
+	if output != "" && !quiet {
+		fmt.Fprintf(os.Stderr, "Results written to %s\n", output)
+	}
+	return nil
 }
