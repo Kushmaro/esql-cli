@@ -208,6 +208,61 @@ Context-aware tab completion for the full ES|QL language. The CLI sends queries 
 
 ---
 
+## Phase 7: Query Ergonomics
+
+Make writing and re-running queries frictionless.
+
+- [x] **Saved queries / bookmarks** — `esql save "error-spike" 'FROM logs-* | ...'` persists named queries to `~/.esql.yaml` (or a separate `~/.esql_queries.yaml`). `esql run error-spike` executes them. `esql queries list` shows saved queries.
+- [x] **Query parameterization** — support `{{param}}` placeholders in saved queries: `esql run error-spike --param index=logs-* --param min_status=500`. Also works inline: `esql query 'FROM {{index}} | WHERE status >= {{min}}' --param index=logs-* --param min=500`
+- [ ] **Watch mode** — `esql watch 'FROM metrics | STATS avg(cpu) BY host' --every 5s` re-runs a query on an interval and refreshes the table in place. Useful for live monitoring in a terminal.
+- [ ] **Dry-run / generate curl** — `esql query --dry-run '...'` prints the equivalent `curl` command instead of executing. Useful for sharing with colleagues or debugging outside the CLI.
+
+---
+
+## Phase 8: REPL Enhancements
+
+Bring the interactive experience closer to `psql`.
+
+- [ ] **Syntax highlighting** — color ES|QL keywords, functions, strings, and operators as the user types in the REPL
+- [ ] **Function signature hints** — when tab-completing a function like `AVG(`, show a brief inline hint with expected arguments (e.g., `AVG(number_field)`)
+- [ ] **Pager support** — automatically pipe large result sets through `less` (like `psql` does), with `\pager` to toggle
+- [ ] **`.esqlrc` startup file** — like `.psqlrc`, auto-run commands on REPL start (e.g., `\f json`, `\timing`)
+- [ ] **`\sample <index>`** — show a quick sample of rows from an index (`FROM <index> | LIMIT 5`) in one keystroke, so you can eyeball the shape of the data without typing a full query
+- [ ] **`\history`** — browse and re-run queries from history interactively
+- [ ] **Horizontal scroll / column truncation** — handle wide result sets that exceed terminal width (truncate with `...` or allow horizontal scrolling)
+
+---
+
+## Phase 9: Output & Integration
+
+Expand output formats and make `esql` a bridge to other tools.
+
+- [ ] **NDJSON output format** — one JSON object per line (`--format ndjson`). The lingua franca for streaming data into jq, Logstash, custom scripts, and other systems.
+- [ ] **`--output` / `-o` flag** — write results directly to a file while still showing progress/timing on stderr
+- [ ] **Export to Parquet** — `--format parquet` for users who want to pull ES data into pandas, DuckDB, or Spark for offline analysis
+- [ ] **Streaming / chunked output** — start printing rows as they arrive for large result sets (requires ES async query API; carried forward from Phase 4)
+
+---
+
+## Phase 10: Operational & CI-Friendly
+
+Use `esql` in automation, monitoring, and CI/CD pipelines.
+
+- [ ] **Threshold assertions** — `esql check 'FROM metrics | STATS avg_cpu = AVG(cpu)' --assert 'avg_cpu < 80'`. Exit 0 if the assertion passes, exit 1 if it fails. Use in CI/CD, cron jobs, or alerting scripts.
+- [ ] **Query performance logging** — `--timing-log <file>` appends `{query, took_ms, timestamp}` to a file after each execution for tracking query performance over time
+- [ ] **Health check / ping** — `esql ping` tests connectivity and exits with 0/1. Useful for Docker health checks, readiness probes, and scripts.
+
+---
+
+## Phase 11: Discovery & Exploration
+
+Help users understand their clusters and data.
+
+- [ ] **Cluster status** — `esql status` showing cluster health, node count, total indices/docs/size at a glance
+- [ ] **Schema comparison** — `esql diff staging production` compares field mappings between two profiles/clusters. Catches mapping drift between environments.
+
+---
+
 ## Non-goals (explicitly out of scope)
 
 - **Query parsing or validation client-side** — the CLI is a thin transport layer. Elasticsearch validates the ES|QL. We don't reimplement the parser.

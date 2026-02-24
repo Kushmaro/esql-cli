@@ -316,6 +316,12 @@ type ResolvedIndex struct {
 	Name string `json:"name"`
 }
 
+// ResolvedAlias represents an alias from the _resolve/index API.
+type ResolvedAlias struct {
+	Name    string   `json:"name"`
+	Indices []string `json:"indices"`
+}
+
 // ResolvedDataStream represents a data stream from the _resolve/index API.
 type ResolvedDataStream struct {
 	Name string `json:"name"`
@@ -324,6 +330,7 @@ type ResolvedDataStream struct {
 // ResolveResult holds the combined output from _resolve/index.
 type ResolveResult struct {
 	Indices     []ResolvedIndex      `json:"indices"`
+	Aliases     []ResolvedAlias      `json:"aliases"`
 	DataStreams []ResolvedDataStream  `json:"data_streams"`
 }
 

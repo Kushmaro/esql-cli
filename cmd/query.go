@@ -13,6 +13,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Ensure time.Duration is used for the timeout flag registration.
+var _ time.Duration
+
 var queryCmd = &cobra.Command{
 	Use:   "query [esql query string | -]",
 	Short: "Execute an ES|QL query",
@@ -42,6 +45,7 @@ func init() {
 	queryCmd.Flags().String("columns", "", "comma-separated list of columns to include in output")
 	queryCmd.Flags().Duration("timeout", 0, "per-query timeout (e.g. 60s, 5m)")
 	queryCmd.Flags().String("file", "", "read queries from file (separated by ; or blank lines)")
+	queryCmd.Flags().StringArray("param", nil, "parameter in key=value format for {{key}} placeholders")
 	rootCmd.AddCommand(queryCmd)
 }
 
@@ -93,7 +97,15 @@ func runQuery(cmd *cobra.Command, args []string) error {
 		Quiet:     quiet,
 	}
 
+	params, _ := cmd.Flags().GetStringArray("param")
+
 	for i, query := range queries {
+		if len(params) > 0 {
+			query, err = config.ApplyParams(query, params)
+			if err != nil {
+				return err
+			}
+		}
 		if err := executeOne(c, query, opts, quiet); err != nil {
 			if len(queries) > 1 {
 				fmt.Fprintf(os.Stderr, "Error in query %d: %s\n", i+1, err)
@@ -169,6 +181,3 @@ func splitQueries(input string) []string {
 	}
 	return queries
 }
-
-// Ensure timeout type is registered.
-var _ time.Duration
