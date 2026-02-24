@@ -190,6 +190,59 @@ type FieldInfo struct {
 	Type string
 }
 
+// DataStreamInfo represents a data stream from the _data_stream API.
+type DataStreamInfo struct {
+	Name           string `json:"name"`
+	TimestampField string `json:"timestamp_field"`
+	Status         string `json:"status"`
+	Template       string `json:"template"`
+	IndexMode      string `json:"index_mode"`
+	BackingIndices int    `json:"backing_indices"`
+}
+
+// ListDataStreams returns data stream metadata via _data_stream.
+func (c *Client) ListDataStreams(pattern string) ([]DataStreamInfo, error) {
+	path := "/_data_stream"
+	if pattern != "" {
+		path += "/" + pattern
+	}
+
+	body, err := c.doGet(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw struct {
+		DataStreams []struct {
+			Name           string `json:"name"`
+			TimestampField struct {
+				Name string `json:"name"`
+			} `json:"timestamp_field"`
+			Indices   []json.RawMessage `json:"indices"`
+			Status    string            `json:"status"`
+			Template  string            `json:"template"`
+			IndexMode string            `json:"index_mode"`
+		} `json:"data_streams"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("parsing data streams response: %w", err)
+	}
+
+	streams := make([]DataStreamInfo, len(raw.DataStreams))
+	for i, ds := range raw.DataStreams {
+		streams[i] = DataStreamInfo{
+			Name:           ds.Name,
+			TimestampField: ds.TimestampField.Name,
+			Status:         strings.ToLower(ds.Status),
+			Template:       ds.Template,
+			IndexMode:      ds.IndexMode,
+			BackingIndices: len(ds.Indices),
+		}
+	}
+
+	return streams, nil
+}
+
 // ListIndices returns index metadata via _cat/indices.
 // An optional pattern filters the results (e.g. "logs-*").
 func (c *Client) ListIndices(pattern string) ([]IndexInfo, error) {
