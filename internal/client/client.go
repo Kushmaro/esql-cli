@@ -19,6 +19,7 @@ type Config struct {
 	APIKey   string
 	Insecure bool
 	Timeout  time.Duration
+	Verbose  bool
 }
 
 type Client struct {
@@ -81,10 +82,14 @@ func New(cfg Config) *Client {
 		timeout = 30 * time.Second
 	}
 
-	transport := &http.Transport{
+	var transport http.RoundTripper = &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: cfg.Insecure,
 		},
+	}
+
+	if cfg.Verbose {
+		transport = &verboseTransport{inner: transport}
 	}
 
 	return &Client{

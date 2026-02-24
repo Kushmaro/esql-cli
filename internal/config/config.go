@@ -32,6 +32,8 @@ type FileConfig struct {
 func ClientConfig() (client.Config, error) {
 	profile := viper.GetString("profile")
 
+	verbose := viper.GetBool("verbose")
+
 	if profile != "" {
 		key := "profiles." + profile + "."
 		host := viper.GetString(key + "host")
@@ -44,6 +46,7 @@ func ClientConfig() (client.Config, error) {
 			Password: viper.GetString(key + "password"),
 			APIKey:   viper.GetString(key + "api_key"),
 			Insecure: viper.GetBool(key + "insecure"),
+			Verbose:  verbose,
 		}, nil
 	}
 
@@ -57,6 +60,7 @@ func ClientConfig() (client.Config, error) {
 				Password: viper.GetString(key + "password"),
 				APIKey:   viper.GetString(key + "api_key"),
 				Insecure: viper.GetBool(key + "insecure"),
+				Verbose:  verbose,
 			}, nil
 		}
 	}
@@ -67,6 +71,7 @@ func ClientConfig() (client.Config, error) {
 		Password: viper.GetString("password"),
 		APIKey:   viper.GetString("api_key"),
 		Insecure: viper.GetBool("insecure"),
+		Verbose:  verbose,
 	}, nil
 }
 
