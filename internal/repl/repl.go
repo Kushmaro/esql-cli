@@ -40,7 +40,11 @@ func (r *REPL) Run() error {
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
-	fmt.Fprintf(os.Stderr, "Connected to %s/%s (cluster: %s)\n", info.Name, info.Version.Number, info.Cluster)
+	if info.Version.Number != "" {
+		fmt.Fprintf(os.Stderr, "Connected to %s/%s (cluster: %s)\n", info.Name, info.Version.Number, info.Cluster)
+	} else {
+		fmt.Fprintln(os.Stderr, "Connected (cluster info unavailable — read-only credentials)")
+	}
 	fmt.Fprintln(os.Stderr, "Type \\h for help, \\q to quit.")
 	fmt.Fprintln(os.Stderr)
 
@@ -214,7 +218,11 @@ func (r *REPL) showData() {
 	streams, dsErr := r.client.ListDataStreams("")
 
 	if idxErr != nil && dsErr != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", idxErr)
+		if client.IsPrivilegeError(idxErr) {
+			r.showDataFallback()
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %s\n", idxErr)
+		}
 		return
 	}
 
@@ -263,11 +271,25 @@ func (r *REPL) showData() {
 			}
 			entries = append(entries, entry{"index", idx.Health, idx.Index, idx.DocsCount, displaySize(idx.StoreSize, idx.DocsCount)})
 		}
+	} else if client.IsPrivilegeError(idxErr) {
+		resolved, err := r.client.ResolveIndex("")
+		if err == nil {
+			dsSet := make(map[string]bool, len(dsNames))
+			for _, n := range dsNames {
+				dsSet[n] = true
+			}
+			for _, idx := range resolved.Indices {
+				if strings.HasPrefix(idx.Name, ".") || dsSet[idx.Name] {
+					continue
+				}
+				entries = append(entries, entry{"index", "", idx.Name, "n/a", "n/a"})
+			}
+		}
 	}
 
 	if dsErr == nil {
 		for _, ds := range streams {
-			docs := "0"
+			docs := "n/a"
 			size := "n/a"
 			if s := statsMap[ds.Name]; s != nil {
 				docs = strconv.FormatInt(s.docs, 10)
@@ -297,6 +319,54 @@ func (r *REPL) showData() {
 
 	for _, e := range entries {
 		tbl.Append([]any{e.kind, e.health, e.name, e.docs, e.size})
+	}
+	tbl.Render()
+}
+
+func (r *REPL) showDataFallback() {
+	resolved, err := r.client.ResolveIndex("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n\n%s\n", err, client.PrivilegeHint)
+		return
+	}
+
+	type entry struct {
+		kind, name string
+	}
+
+	var entries []entry
+	dsSet := make(map[string]bool)
+	for _, ds := range resolved.DataStreams {
+		dsSet[ds.Name] = true
+		entries = append(entries, entry{"data_stream", ds.Name})
+	}
+	for _, idx := range resolved.Indices {
+		if strings.HasPrefix(idx.Name, ".") || dsSet[idx.Name] {
+			continue
+		}
+		entries = append(entries, entry{"index", idx.Name})
+	}
+
+	if len(entries) == 0 {
+		fmt.Fprintln(os.Stderr, "No indices or data streams found.")
+		return
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].name < entries[j].name
+	})
+
+	tbl := tablewriter.NewTable(os.Stdout,
+		tablewriter.WithConfig(tablewriter.Config{
+			Header: tw.CellConfig{
+				Formatting: tw.CellFormatting{AutoFormat: tw.Off},
+			},
+		}),
+	)
+	tbl.Header([]string{"type", "name"})
+
+	for _, e := range entries {
+		tbl.Append([]any{e.kind, e.name})
 	}
 	tbl.Render()
 }
@@ -332,7 +402,11 @@ func formatBytes(s string) string {
 func (r *REPL) showFields(index string) {
 	fields, err := r.client.GetFields(index)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		if client.IsPrivilegeError(err) {
+			fmt.Fprintf(os.Stderr, "Error: %s\n\n%s\n", err, client.PrivilegeHint)
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		}
 		return
 	}
 

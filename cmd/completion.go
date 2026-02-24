@@ -109,7 +109,10 @@ func completeDataSourceNames(cmd *cobra.Command, args []string, toComplete strin
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	cfg := config.ClientConfig()
+	cfg, err := config.ClientConfig()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 	cfg.Timeout = 5_000_000_000 // 5s for completion
 	c := client.New(cfg)
 

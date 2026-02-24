@@ -72,7 +72,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, "FAILED")
 		return fmt.Errorf("connection test failed: %w", err)
 	}
-	fmt.Fprintf(os.Stderr, "OK (cluster: %s, version: %s)\n", info.Cluster, info.Version.Number)
+	if info.Version.Number != "" {
+		fmt.Fprintf(os.Stderr, "OK (cluster: %s, version: %s)\n", info.Cluster, info.Version.Number)
+	} else {
+		fmt.Fprintf(os.Stderr, "OK (cluster info unavailable — read-only credentials)\n")
+	}
 
 	fileCfg, err := config.LoadFileConfig()
 	if err != nil {

@@ -41,11 +41,17 @@ func init() {
 func runFields(cmd *cobra.Command, args []string) error {
 	index := args[0]
 
-	cfg := config.ClientConfig()
+	cfg, err := config.ClientConfig()
+	if err != nil {
+		return err
+	}
 	c := client.New(cfg)
 
 	fields, err := c.GetFields(index)
 	if err != nil {
+		if client.IsPrivilegeError(err) {
+			return fmt.Errorf("%w\n\n%s", err, client.PrivilegeHint)
+		}
 		return err
 	}
 

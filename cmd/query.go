@@ -76,7 +76,10 @@ func runQuery(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	cfg := config.ClientConfig()
+	cfg, err := config.ClientConfig()
+	if err != nil {
+		return err
+	}
 	if timeout > 0 {
 		cfg.Timeout = timeout
 	}

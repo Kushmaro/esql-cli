@@ -57,11 +57,17 @@ func runData(cmd *cobra.Command, args []string) error {
 		pattern = args[0]
 	}
 
-	cfg := config.ClientConfig()
+	cfg, err := config.ClientConfig()
+	if err != nil {
+		return err
+	}
 	c := client.New(cfg)
 
 	entries, err := listData(c, pattern)
 	if err != nil {
+		if client.IsPrivilegeError(err) {
+			return fmt.Errorf("%w\n\n%s", err, client.PrivilegeHint)
+		}
 		return err
 	}
 
@@ -97,6 +103,9 @@ func listData(c *client.Client, pattern string) ([]dataEntry, error) {
 	streams, dsErr := c.ListDataStreams(pattern)
 
 	if idxErr != nil && dsErr != nil {
+		if client.IsPrivilegeError(idxErr) {
+			return listDataFallback(c, pattern)
+		}
 		return nil, idxErr
 	}
 
@@ -139,10 +148,10 @@ func listData(c *client.Client, pattern string) ([]dataEntry, error) {
 
 	var entries []dataEntry
 
-	// Add regular indices, skip backing indices
+	// Add regular indices, skip backing indices and system indices
 	if idxErr == nil {
 		for _, idx := range indices {
-			if backingToDS[idx.Index] != "" {
+			if backingToDS[idx.Index] != "" || strings.HasPrefix(idx.Index, ".") {
 				continue
 			}
 			entries = append(entries, dataEntry{
@@ -153,12 +162,33 @@ func listData(c *client.Client, pattern string) ([]dataEntry, error) {
 				StoreSize: displaySize(idx.StoreSize, idx.DocsCount),
 			})
 		}
+	} else if client.IsPrivilegeError(idxErr) {
+		// _cat/indices failed with 403 but _data_stream succeeded.
+		// Fall back to _resolve/index to discover regular indices.
+		resolved, err := c.ResolveIndex(pattern)
+		if err == nil {
+			dsSet := make(map[string]bool, len(dsNames))
+			for _, n := range dsNames {
+				dsSet[n] = true
+			}
+			for _, idx := range resolved.Indices {
+				if strings.HasPrefix(idx.Name, ".") || dsSet[idx.Name] {
+					continue
+				}
+				entries = append(entries, dataEntry{
+					Type:      "index",
+					Name:      idx.Name,
+					DocsCount: "n/a",
+					StoreSize: "n/a",
+				})
+			}
+		}
 	}
 
 	// Add data streams with aggregated stats
 	if dsErr == nil {
 		for _, ds := range streams {
-			docs := "0"
+			docs := "n/a"
 			size := "n/a"
 			if s := statsMap[ds.Name]; s != nil {
 				docs = strconv.FormatInt(s.docs, 10)
@@ -172,6 +202,44 @@ func listData(c *client.Client, pattern string) ([]dataEntry, error) {
 				StoreSize: size,
 			})
 		}
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Name < entries[j].Name
+	})
+
+	return entries, nil
+}
+
+// listDataFallback uses _resolve/index when _cat/indices is forbidden.
+func listDataFallback(c *client.Client, pattern string) ([]dataEntry, error) {
+	resolved, err := c.ResolveIndex(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("insufficient privileges to list indices.\n\n%s", client.PrivilegeHint)
+	}
+
+	var entries []dataEntry
+	dsSet := make(map[string]bool)
+	for _, ds := range resolved.DataStreams {
+		dsSet[ds.Name] = true
+		entries = append(entries, dataEntry{
+			Type:      "data_stream",
+			Name:      ds.Name,
+			DocsCount: "n/a",
+			StoreSize: "n/a",
+		})
+	}
+
+	for _, idx := range resolved.Indices {
+		if strings.HasPrefix(idx.Name, ".") || dsSet[idx.Name] {
+			continue
+		}
+		entries = append(entries, dataEntry{
+			Type:      "index",
+			Name:      idx.Name,
+			DocsCount: "n/a",
+			StoreSize: "n/a",
+		})
 	}
 
 	sort.Slice(entries, func(i, j int) bool {
@@ -251,11 +319,17 @@ func dataDelimited(entries []dataEntry, delim string, noHeader bool) error {
 }
 
 func runDataFields(cmd *cobra.Command, index string) error {
-	cfg := config.ClientConfig()
+	cfg, err := config.ClientConfig()
+	if err != nil {
+		return err
+	}
 	c := client.New(cfg)
 
 	fields, err := c.GetFields(index)
 	if err != nil {
+		if client.IsPrivilegeError(err) {
+			return fmt.Errorf("%w\n\n%s", err, client.PrivilegeHint)
+		}
 		return err
 	}
 
