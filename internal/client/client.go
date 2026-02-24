@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -63,6 +64,17 @@ func (e *ESError) Error() string {
 	return fmt.Sprintf("[%d] %s", e.Status, e.Raw)
 }
 
+// IsPrivilegeError reports whether err is a 403 from Elasticsearch,
+// typically caused by insufficient API key / role privileges.
+func IsPrivilegeError(err error) bool {
+	var esErr *ESError
+	return errors.As(err, &esErr) && esErr.Status == http.StatusForbidden
+}
+
+const PrivilegeHint = `Your credentials lack the required index privileges for this command.
+Add "view_index_metadata" to your role to use metadata commands (data, fields, \d).
+Queries (esql query) will still work with read-only credentials.`
+
 func New(cfg Config) *Client {
 	timeout := cfg.Timeout
 	if timeout == 0 {
@@ -94,7 +106,30 @@ type ClusterInfo struct {
 }
 
 // Ping checks connectivity to the Elasticsearch cluster.
+// It first tries GET / for cluster info. If that returns 403 (common with
+// read-only API keys that lack cluster:monitor privileges), it falls back
+// to running a trivial ES|QL query to verify the connection works.
 func (c *Client) Ping() (*ClusterInfo, error) {
+	info, err := c.clusterInfo()
+	if err == nil {
+		return info, nil
+	}
+
+	var esErr *ESError
+	if !errors.As(err, &esErr) || esErr.Status != http.StatusForbidden {
+		return nil, err
+	}
+
+	// GET / returned 403 -- the credentials likely lack cluster:monitor.
+	// Fall back to a lightweight ES|QL query to confirm the connection works.
+	if _, qErr := c.Query("ROW x = 1"); qErr != nil {
+		return nil, fmt.Errorf("connection failed: %w (cluster info also unavailable: %w)", qErr, err)
+	}
+
+	return &ClusterInfo{Name: "n/a", Cluster: "n/a"}, nil
+}
+
+func (c *Client) clusterInfo() (*ClusterInfo, error) {
 	url := strings.TrimRight(c.config.Host, "/") + "/"
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -109,7 +144,7 @@ func (c *Client) Ping() (*ClusterInfo, error) {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("connection failed: %w", err)
+		return nil, &ConnectionError{Err: fmt.Errorf("connection failed: %w", err)}
 	}
 	defer resp.Body.Close()
 
@@ -274,6 +309,43 @@ func (c *Client) ListIndices(pattern string) ([]IndexInfo, error) {
 	}
 
 	return indices, nil
+}
+
+// ResolvedIndex represents an index from the _resolve/index API.
+type ResolvedIndex struct {
+	Name string `json:"name"`
+}
+
+// ResolvedDataStream represents a data stream from the _resolve/index API.
+type ResolvedDataStream struct {
+	Name string `json:"name"`
+}
+
+// ResolveResult holds the combined output from _resolve/index.
+type ResolveResult struct {
+	Indices     []ResolvedIndex      `json:"indices"`
+	DataStreams []ResolvedDataStream  `json:"data_streams"`
+}
+
+// ResolveIndex uses the _resolve/index API to discover indices and data streams.
+// This API requires only view_index_metadata, unlike _cat/indices which needs monitor.
+func (c *Client) ResolveIndex(pattern string) (*ResolveResult, error) {
+	if pattern == "" {
+		pattern = "*"
+	}
+	path := "/_resolve/index/" + pattern
+
+	body, err := c.doGet(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var result ResolveResult
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parsing resolve response: %w", err)
+	}
+
+	return &result, nil
 }
 
 // GetFields returns the flattened field list for an index via _mapping.

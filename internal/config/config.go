@@ -27,18 +27,23 @@ type FileConfig struct {
 
 // ClientConfig builds a client.Config from the current Viper state.
 // If --profile is set, it loads that profile's settings.
-func ClientConfig() client.Config {
+// Returns an error if the requested profile does not exist.
+func ClientConfig() (client.Config, error) {
 	profile := viper.GetString("profile")
 
 	if profile != "" {
 		key := "profiles." + profile + "."
+		host := viper.GetString(key + "host")
+		if host == "" {
+			return client.Config{}, fmt.Errorf("unknown profile %q (run 'esql profiles list' to see available profiles)", profile)
+		}
 		return client.Config{
-			Host:     viper.GetString(key + "host"),
+			Host:     host,
 			User:     viper.GetString(key + "user"),
 			Password: viper.GetString(key + "password"),
 			APIKey:   viper.GetString(key + "api_key"),
 			Insecure: viper.GetBool(key + "insecure"),
-		}
+		}, nil
 	}
 
 	if dp := viper.GetString("default_profile"); dp != "" {
@@ -51,7 +56,7 @@ func ClientConfig() client.Config {
 				Password: viper.GetString(key + "password"),
 				APIKey:   viper.GetString(key + "api_key"),
 				Insecure: viper.GetBool(key + "insecure"),
-			}
+			}, nil
 		}
 	}
 
@@ -61,7 +66,7 @@ func ClientConfig() client.Config {
 		Password: viper.GetString("password"),
 		APIKey:   viper.GetString("api_key"),
 		Insecure: viper.GetBool("insecure"),
-	}
+	}, nil
 }
 
 // ConfigPath returns the path to the config file.

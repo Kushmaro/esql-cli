@@ -31,7 +31,10 @@ interactive shell with tab completion and history.`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) {
-			cfg := config.ClientConfig()
+			cfg, err := config.ClientConfig()
+			if err != nil {
+				return err
+			}
 			r := repl.New(cfg)
 			return r.Run()
 		}
