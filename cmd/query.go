@@ -51,6 +51,10 @@ func init() {
 }
 
 func runQuery(cmd *cobra.Command, args []string) error {
+	if err := requireConnection(cmd); err != nil {
+		return err
+	}
+
 	file, _ := cmd.Flags().GetString("file")
 	queries, err := resolveQueries(args, file)
 	if err != nil {

@@ -31,6 +31,9 @@ interactive shell with tab completion and history.`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) {
+			if err := requireConnection(cmd); err != nil {
+				return err
+			}
 			cfg, err := config.ClientConfig()
 			if err != nil {
 				return err
@@ -72,7 +75,7 @@ func init() {
 	rootCmd.PersistentFlags().String("password", "", "Elasticsearch password")
 	rootCmd.PersistentFlags().String("api-key", "", "Elasticsearch API key (takes precedence over user/password)")
 	rootCmd.PersistentFlags().Bool("insecure", false, "skip TLS certificate verification")
-	rootCmd.PersistentFlags().String("profile", "", "named connection profile from config file")
+	rootCmd.PersistentFlags().String("cluster", "", "named cluster connection from config file")
 	rootCmd.PersistentFlags().Bool("verbose", false, "show HTTP request/response details for debugging")
 
 	viper.BindPFlag("host", rootCmd.PersistentFlags().Lookup("host"))
@@ -80,8 +83,24 @@ func init() {
 	viper.BindPFlag("password", rootCmd.PersistentFlags().Lookup("password"))
 	viper.BindPFlag("api_key", rootCmd.PersistentFlags().Lookup("api-key"))
 	viper.BindPFlag("insecure", rootCmd.PersistentFlags().Lookup("insecure"))
-	viper.BindPFlag("profile", rootCmd.PersistentFlags().Lookup("profile"))
+	viper.BindPFlag("cluster", rootCmd.PersistentFlags().Lookup("cluster"))
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+}
+
+// requireConnection returns an error if no Elasticsearch connection has been
+// configured and no explicit connection flags were passed. Commands that need
+// ES connectivity call this before attempting to connect.
+func requireConnection(cmd *cobra.Command) error {
+	pf := cmd.Root().PersistentFlags()
+	for _, name := range []string{"host", "user", "password", "api-key", "cluster"} {
+		if pf.Changed(name) {
+			return nil
+		}
+	}
+	if config.HasConnectionConfig() {
+		return nil
+	}
+	return fmt.Errorf("no Elasticsearch connection configured\n\nRun 'esql init' to set up a connection, or provide --host and credentials via flags.")
 }
 
 func initConfig() {

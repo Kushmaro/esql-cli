@@ -12,6 +12,7 @@ import (
 	"github.com/Kushmaro/esql-cli/internal/config"
 	"github.com/Kushmaro/esql-cli/internal/formatter"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var watchCmd = &cobra.Command{
@@ -45,6 +46,10 @@ func init() {
 }
 
 func runWatch(cmd *cobra.Command, args []string) error {
+	if err := requireConnection(cmd); err != nil {
+		return err
+	}
+
 	savedName, _ := cmd.Flags().GetString("saved")
 	var query string
 
@@ -53,11 +58,15 @@ func runWatch(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		q, ok := cfg.Queries[savedName]
+		sq, ok := cfg.Queries[savedName]
 		if !ok {
 			return fmt.Errorf("unknown query %q (run 'esql queries list' to see saved queries)", savedName)
 		}
-		query = q
+		query = sq.Query
+		if sq.Cluster != "" && !cmd.Root().PersistentFlags().Changed("cluster") {
+			viper.Set("cluster", sq.Cluster)
+			fmt.Fprintf(os.Stderr, "Using cluster '%s' (saved with query)\n", sq.Cluster)
+		}
 	} else if len(args) == 1 {
 		query = args[0]
 	} else {

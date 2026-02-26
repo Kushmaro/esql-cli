@@ -10,8 +10,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Profile holds connection settings for a single cluster.
-type Profile struct {
+// Cluster holds connection settings for a single Elasticsearch cluster.
+type Cluster struct {
 	Host     string `yaml:"host"`
 	User     string `yaml:"user,omitempty"`
 	Password string `yaml:"password,omitempty"`
@@ -19,26 +19,43 @@ type Profile struct {
 	Insecure bool   `yaml:"insecure,omitempty"`
 }
 
+// SavedQuery stores a query string and the cluster it was saved from.
+type SavedQuery struct {
+	Query   string `yaml:"query"`
+	Cluster string `yaml:"cluster,omitempty"`
+}
+
+// UnmarshalYAML handles both the legacy plain-string format and the new
+// structured format so existing config files keep working.
+func (sq *SavedQuery) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		sq.Query = value.Value
+		return nil
+	}
+	type raw SavedQuery
+	return value.Decode((*raw)(sq))
+}
+
 // FileConfig represents the full ~/.esql.yaml structure.
 type FileConfig struct {
-	DefaultProfile string             `yaml:"default_profile,omitempty"`
-	Profiles       map[string]Profile `yaml:"profiles,omitempty"`
-	Queries        map[string]string  `yaml:"queries,omitempty"`
+	DefaultCluster string                 `yaml:"default_cluster,omitempty"`
+	Clusters       map[string]Cluster     `yaml:"clusters,omitempty"`
+	Queries        map[string]SavedQuery  `yaml:"queries,omitempty"`
 }
 
 // ClientConfig builds a client.Config from the current Viper state.
-// If --profile is set, it loads that profile's settings.
-// Returns an error if the requested profile does not exist.
+// If --cluster is set, it loads that cluster's settings.
+// Returns an error if the requested cluster does not exist.
 func ClientConfig() (client.Config, error) {
-	profile := viper.GetString("profile")
+	cluster := viper.GetString("cluster")
 
 	verbose := viper.GetBool("verbose")
 
-	if profile != "" {
-		key := "profiles." + profile + "."
+	if cluster != "" {
+		key := "clusters." + cluster + "."
 		host := viper.GetString(key + "host")
 		if host == "" {
-			return client.Config{}, fmt.Errorf("unknown profile %q (run 'esql profiles list' to see available profiles)", profile)
+			return client.Config{}, fmt.Errorf("unknown cluster %q (run 'esql clusters list' to see available clusters)", cluster)
 		}
 		return client.Config{
 			Host:     host,
@@ -50,8 +67,8 @@ func ClientConfig() (client.Config, error) {
 		}, nil
 	}
 
-	if dp := viper.GetString("default_profile"); dp != "" {
-		key := "profiles." + dp + "."
+	if dc := viper.GetString("default_cluster"); dc != "" {
+		key := "clusters." + dc + "."
 		host := viper.GetString(key + "host")
 		if host != "" {
 			return client.Config{
@@ -98,8 +115,8 @@ func LoadFileConfig() (*FileConfig, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &FileConfig{
-			Profiles: make(map[string]Profile),
-			Queries:  make(map[string]string),
+			Clusters: make(map[string]Cluster),
+			Queries:  make(map[string]SavedQuery),
 		}, nil
 		}
 		return nil, err
@@ -110,11 +127,11 @@ func LoadFileConfig() (*FileConfig, error) {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 
-	if cfg.Profiles == nil {
-		cfg.Profiles = make(map[string]Profile)
+	if cfg.Clusters == nil {
+		cfg.Clusters = make(map[string]Cluster)
 	}
 	if cfg.Queries == nil {
-		cfg.Queries = make(map[string]string)
+		cfg.Queries = make(map[string]SavedQuery)
 	}
 	return &cfg, nil
 }
@@ -134,18 +151,45 @@ func SaveFileConfig(cfg *FileConfig) error {
 	return os.WriteFile(path, data, 0600)
 }
 
-// ListProfiles returns the names of all configured profiles.
-func ListProfiles() ([]string, string, error) {
+// ListClusters returns the names of all configured clusters.
+func ListClusters() ([]string, string, error) {
 	cfg, err := LoadFileConfig()
 	if err != nil {
 		return nil, "", err
 	}
 
-	names := make([]string, 0, len(cfg.Profiles))
-	for name := range cfg.Profiles {
+	names := make([]string, 0, len(cfg.Clusters))
+	for name := range cfg.Clusters {
 		names = append(names, name)
 	}
-	return names, cfg.DefaultProfile, nil
+	return names, cfg.DefaultCluster, nil
+}
+
+// HasConnectionConfig reports whether any Elasticsearch connection
+// settings have been configured -- via config file clusters, environment
+// variables, or top-level config keys. It does NOT consider CLI flags
+// (those are checked separately by the caller).
+func HasConnectionConfig() bool {
+	if viper.GetString("user") != "" || viper.GetString("api_key") != "" {
+		return true
+	}
+	if viper.GetString("default_cluster") != "" {
+		return true
+	}
+	if clusters := viper.GetStringMap("clusters"); len(clusters) > 0 {
+		return true
+	}
+	return false
+}
+
+// ActiveClusterName returns the name of the cluster that will be used for
+// queries — either the explicit --cluster flag or the default_cluster from config.
+// Returns "" when using bare host/credentials without a named cluster.
+func ActiveClusterName() string {
+	if c := viper.GetString("cluster"); c != "" {
+		return c
+	}
+	return viper.GetString("default_cluster")
 }
 
 // ListQueryNames returns the names of all saved queries.

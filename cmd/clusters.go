@@ -11,30 +11,30 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var profilesCmd = &cobra.Command{
-	Use:   "profiles",
-	Short: "Manage connection profiles",
+var clustersCmd = &cobra.Command{
+	Use:   "clusters",
+	Short: "Manage cluster connections",
 }
 
-var profilesListCmd = &cobra.Command{
+var clustersListCmd = &cobra.Command{
 	Use:          "list",
-	Short:        "List configured connection profiles",
+	Short:        "List configured cluster connections",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		names, defaultProfile, err := config.ListProfiles()
+		names, defaultCluster, err := config.ListClusters()
 		if err != nil {
 			return err
 		}
 
 		if len(names) == 0 {
-			fmt.Fprintln(os.Stderr, "No profiles configured. Run 'esql init' to create one.")
+			fmt.Fprintln(os.Stderr, "No clusters configured. Run 'esql init' to create one.")
 			return nil
 		}
 
 		sort.Strings(names)
 		for _, name := range names {
 			marker := "  "
-			if name == defaultProfile {
+			if name == defaultCluster {
 				marker = "* "
 			}
 			fmt.Printf("%s%s\n", marker, name)
@@ -43,9 +43,9 @@ var profilesListCmd = &cobra.Command{
 	},
 }
 
-var profilesSetCmd = &cobra.Command{
-	Use:          "set <profile>",
-	Short:        "Set the default connection profile",
+var clustersSetCmd = &cobra.Command{
+	Use:          "set <cluster>",
+	Short:        "Set the default cluster connection",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -56,23 +56,23 @@ var profilesSetCmd = &cobra.Command{
 			return err
 		}
 
-		if _, ok := cfg.Profiles[name]; !ok {
-			return fmt.Errorf("unknown profile %q (run 'esql profiles list' to see available profiles)", name)
+		if _, ok := cfg.Clusters[name]; !ok {
+			return fmt.Errorf("unknown cluster %q (run 'esql clusters list' to see available clusters)", name)
 		}
 
-		cfg.DefaultProfile = name
+		cfg.DefaultCluster = name
 		if err := config.SaveFileConfig(cfg); err != nil {
 			return fmt.Errorf("saving config: %w", err)
 		}
 
-		fmt.Fprintf(os.Stderr, "Default profile set to '%s'\n", name)
+		fmt.Fprintf(os.Stderr, "Default cluster set to '%s'\n", name)
 		return nil
 	},
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		names, _, err := config.ListProfiles()
+		names, _, err := config.ListClusters()
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
@@ -80,9 +80,9 @@ var profilesSetCmd = &cobra.Command{
 	},
 }
 
-var profilesRemoveCmd = &cobra.Command{
-	Use:          "remove <profile>",
-	Short:        "Remove a connection profile",
+var clustersRemoveCmd = &cobra.Command{
+	Use:          "remove <cluster>",
+	Short:        "Remove a cluster connection",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -93,11 +93,11 @@ var profilesRemoveCmd = &cobra.Command{
 			return err
 		}
 
-		if _, ok := cfg.Profiles[name]; !ok {
-			return fmt.Errorf("unknown profile %q (run 'esql profiles list' to see available profiles)", name)
+		if _, ok := cfg.Clusters[name]; !ok {
+			return fmt.Errorf("unknown cluster %q (run 'esql clusters list' to see available clusters)", name)
 		}
 
-		fmt.Fprintf(os.Stderr, "Remove profile '%s'? [y/N]: ", name)
+		fmt.Fprintf(os.Stderr, "Remove cluster '%s'? [y/N]: ", name)
 		reader := bufio.NewReader(os.Stdin)
 		answer, _ := reader.ReadString('\n')
 		answer = strings.TrimSpace(strings.ToLower(answer))
@@ -106,12 +106,12 @@ var profilesRemoveCmd = &cobra.Command{
 			return nil
 		}
 
-		delete(cfg.Profiles, name)
+		delete(cfg.Clusters, name)
 
-		if cfg.DefaultProfile == name {
-			cfg.DefaultProfile = ""
-			for remaining := range cfg.Profiles {
-				cfg.DefaultProfile = remaining
+		if cfg.DefaultCluster == name {
+			cfg.DefaultCluster = ""
+			for remaining := range cfg.Clusters {
+				cfg.DefaultCluster = remaining
 				break
 			}
 		}
@@ -120,9 +120,9 @@ var profilesRemoveCmd = &cobra.Command{
 			return fmt.Errorf("saving config: %w", err)
 		}
 
-		fmt.Fprintf(os.Stderr, "Profile '%s' removed.\n", name)
-		if cfg.DefaultProfile != "" {
-			fmt.Fprintf(os.Stderr, "Default profile is now '%s'.\n", cfg.DefaultProfile)
+		fmt.Fprintf(os.Stderr, "Cluster '%s' removed.\n", name)
+		if cfg.DefaultCluster != "" {
+			fmt.Fprintf(os.Stderr, "Default cluster is now '%s'.\n", cfg.DefaultCluster)
 		}
 		return nil
 	},
@@ -130,7 +130,7 @@ var profilesRemoveCmd = &cobra.Command{
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		names, _, err := config.ListProfiles()
+		names, _, err := config.ListClusters()
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
@@ -139,8 +139,8 @@ var profilesRemoveCmd = &cobra.Command{
 }
 
 func init() {
-	profilesCmd.AddCommand(profilesListCmd)
-	profilesCmd.AddCommand(profilesSetCmd)
-	profilesCmd.AddCommand(profilesRemoveCmd)
-	rootCmd.AddCommand(profilesCmd)
+	clustersCmd.AddCommand(clustersListCmd)
+	clustersCmd.AddCommand(clustersSetCmd)
+	clustersCmd.AddCommand(clustersRemoveCmd)
+	rootCmd.AddCommand(clustersCmd)
 }

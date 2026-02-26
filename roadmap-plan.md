@@ -263,6 +263,23 @@ Help users understand their clusters and data.
 
 ---
 
+## Phase 12: Query Examples & Scaffolding
+
+Lower the barrier for new users and make common queries instant.
+
+- [ ] **`\e` canned examples** — typing `\e` after a partial query (e.g., `FROM logs-* \e`) opens an interactive picker with generic query templates for that index: "Show 5 documents", "Count by field", "Top values for a field", "Filter by time range", "Average of numeric field", etc. Selecting one generates the full ES|QL command, pre-filled with the index name and (where possible) real field names from the cached mapping. Works standalone too (`\e` with no prefix lists all templates).
+
+---
+
+## Phase 13: UX Refinements
+
+Naming and workflow improvements based on real usage patterns.
+
+- [x] **Rename `profiles` to `clusters`** — `esql clusters list`, `esql clusters set`, `esql clusters remove`. The word "cluster" maps directly to how Elasticsearch users think about their environments.
+- [x] **Saved queries remember their cluster** — `esql save` records the active cluster name alongside the query in `~/.esql.yaml`. When running `esql queries run <name>`, the CLI automatically uses the saved cluster context (equivalent to `--cluster <saved_cluster>`). An explicit `--cluster` flag overrides the saved value. `esql queries list` shows the associated cluster for each query.
+
+---
+
 ## Non-goals (explicitly out of scope)
 
 - **Query parsing or validation client-side** — the CLI is a thin transport layer. Elasticsearch validates the ES|QL. We don't reimplement the parser.

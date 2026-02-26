@@ -71,8 +71,8 @@ func init() {
 func registerDynamicCompletions() {
 	formatValues := []string{"table\tformatted table output", "json\tJSON output", "csv\tcomma-separated values", "tsv\ttab-separated values"}
 
-	rootCmd.RegisterFlagCompletionFunc("profile", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		names, _, err := config.ListProfiles()
+	rootCmd.RegisterFlagCompletionFunc("cluster", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		names, _, err := config.ListClusters()
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
