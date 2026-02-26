@@ -18,6 +18,7 @@ import (
 )
 
 type dataEntry struct {
+	Cluster   string `json:"cluster,omitempty"`
 	Type      string `json:"type"`
 	Health    string `json:"health"`
 	Name      string `json:"name"`
@@ -32,9 +33,14 @@ var dataCmd = &cobra.Command{
 When called with a name and "fields", shows the field mapping.
 When called with a name and "sample", shows 5 sample rows.
 
+Use --remote to include indices from configured remote clusters. Remote
+index names are shown with the cluster prefix (e.g. "west:logs-*") so
+they can be used directly in FROM clauses for cross-cluster queries.
+
 Examples:
   esql data
   esql data 'logs-*'
+  esql data --remote
   esql data logs-generic-default fields
   esql data logs-generic-default sample
   esql data --format json`,
@@ -46,10 +52,15 @@ Examples:
 func init() {
 	dataCmd.Flags().StringP("format", "f", "", "output format: table, json, csv, tsv")
 	dataCmd.Flags().Bool("no-header", false, "suppress column headers")
+	dataCmd.Flags().Bool("remote", false, "include indices from remote clusters (cross-cluster search)")
 	rootCmd.AddCommand(dataCmd)
 }
 
 func runData(cmd *cobra.Command, args []string) error {
+	if err := requireConnection(cmd); err != nil {
+		return err
+	}
+
 	if len(args) == 2 && strings.EqualFold(args[1], "fields") {
 		return runDataFields(cmd, args[0])
 	}
@@ -68,12 +79,26 @@ func runData(cmd *cobra.Command, args []string) error {
 	}
 	c := client.New(cfg)
 
+	remote, _ := cmd.Flags().GetBool("remote")
+
 	entries, err := listData(c, pattern)
 	if err != nil {
 		if client.IsPrivilegeError(err) {
 			return fmt.Errorf("%w\n\n%s", err, client.PrivilegeHint)
 		}
 		return err
+	}
+
+	if remote {
+		for i := range entries {
+			entries[i].Cluster = "(local)"
+		}
+		remoteEntries, err := listRemoteData(c, pattern)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not list remote clusters: %s\n", err)
+		} else {
+			entries = append(entries, remoteEntries...)
+		}
 	}
 
 	if len(entries) == 0 {
@@ -95,11 +120,11 @@ func runData(cmd *cobra.Command, args []string) error {
 	case "json":
 		return dataJSON(entries)
 	case "csv":
-		return dataDelimited(entries, ",", noHeader)
+		return dataDelimited(entries, ",", noHeader, remote)
 	case "tsv":
-		return dataDelimited(entries, "\t", noHeader)
+		return dataDelimited(entries, "\t", noHeader, remote)
 	default:
-		return dataTable(entries, noHeader)
+		return dataTable(entries, noHeader, remote)
 	}
 }
 
@@ -278,6 +303,86 @@ func listDataFallback(c *client.Client, pattern string) ([]dataEntry, error) {
 	return entries, nil
 }
 
+// listRemoteData discovers indices on remote clusters using _remote/info
+// and _resolve/index with CCS patterns. Returns gracefully on older ES
+// versions or insufficient privileges.
+func listRemoteData(c *client.Client, pattern string) ([]dataEntry, error) {
+	clusters, err := c.ListRemoteClusters()
+	if err != nil {
+		return nil, err
+	}
+	if len(clusters) == 0 {
+		return nil, nil
+	}
+
+	sort.Slice(clusters, func(i, j int) bool {
+		return clusters[i].Name < clusters[j].Name
+	})
+
+	var entries []dataEntry
+
+	for _, cluster := range clusters {
+		if !cluster.Connected {
+			fmt.Fprintf(os.Stderr, "Warning: remote cluster %q is not connected, skipping\n", cluster.Name)
+			continue
+		}
+
+		resolvePattern := cluster.Name + ":"
+		if pattern != "" {
+			resolvePattern += pattern
+		} else {
+			resolvePattern += "*"
+		}
+
+		resolved, err := c.ResolveIndex(resolvePattern)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve indices on remote cluster %q: %s\n", cluster.Name, err)
+			continue
+		}
+
+		dsSet := make(map[string]bool)
+		for _, ds := range resolved.DataStreams {
+			if strings.HasPrefix(ds.Name, ".") {
+				continue
+			}
+			dsSet[ds.Name] = true
+			entries = append(entries, dataEntry{
+				Cluster:   cluster.Name,
+				Type:      "data_stream",
+				Name:      cluster.Name + ":" + ds.Name,
+				DocsCount: "n/a",
+				StoreSize: "n/a",
+			})
+		}
+
+		for _, idx := range resolved.Indices {
+			if strings.HasPrefix(idx.Name, ".") || dsSet[idx.Name] {
+				continue
+			}
+			entries = append(entries, dataEntry{
+				Cluster:   cluster.Name,
+				Type:      "index",
+				Name:      cluster.Name + ":" + idx.Name,
+				DocsCount: "n/a",
+				StoreSize: "n/a",
+			})
+		}
+
+		for _, alias := range resolved.Aliases {
+			if strings.HasPrefix(alias.Name, ".") {
+				continue
+			}
+			entries = append(entries, dataEntry{
+				Cluster: cluster.Name,
+				Type:    "alias",
+				Name:    cluster.Name + ":" + alias.Name,
+			})
+		}
+	}
+
+	return entries, nil
+}
+
 // displaySize formats byte count for display, showing "n/a" when the cluster
 // reports 0 bytes but docs exist (common on serverless clusters).
 func displaySize(sizeBytes, docsCount string) string {
@@ -308,9 +413,10 @@ func formatBytes(s string) string {
 	}
 }
 
-var dataHeaders = []string{"type", "health", "name", "docs.count", "store.size"}
+var dataHeadersLocal = []string{"type", "health", "name", "docs.count", "store.size"}
+var dataHeadersRemote = []string{"cluster", "type", "health", "name", "docs.count", "store.size"}
 
-func dataTable(entries []dataEntry, noHeader bool) error {
+func dataTable(entries []dataEntry, noHeader bool, showCluster bool) error {
 	tbl := tablewriter.NewTable(os.Stdout,
 		tablewriter.WithConfig(tablewriter.Config{
 			Header: tw.CellConfig{
@@ -320,11 +426,19 @@ func dataTable(entries []dataEntry, noHeader bool) error {
 	)
 
 	if !noHeader {
-		tbl.Header(dataHeaders)
+		if showCluster {
+			tbl.Header(dataHeadersRemote)
+		} else {
+			tbl.Header(dataHeadersLocal)
+		}
 	}
 
 	for _, e := range entries {
-		tbl.Append([]any{e.Type, e.Health, e.Name, e.DocsCount, e.StoreSize})
+		if showCluster {
+			tbl.Append([]any{e.Cluster, e.Type, e.Health, e.Name, e.DocsCount, e.StoreSize})
+		} else {
+			tbl.Append([]any{e.Type, e.Health, e.Name, e.DocsCount, e.StoreSize})
+		}
 	}
 
 	tbl.Render()
@@ -337,12 +451,20 @@ func dataJSON(entries []dataEntry) error {
 	return enc.Encode(entries)
 }
 
-func dataDelimited(entries []dataEntry, delim string, noHeader bool) error {
+func dataDelimited(entries []dataEntry, delim string, noHeader bool, showCluster bool) error {
 	if !noHeader {
-		fmt.Println(strings.Join(dataHeaders, delim))
+		if showCluster {
+			fmt.Println(strings.Join(dataHeadersRemote, delim))
+		} else {
+			fmt.Println(strings.Join(dataHeadersLocal, delim))
+		}
 	}
 	for _, e := range entries {
-		fmt.Println(strings.Join([]string{e.Type, e.Health, e.Name, e.DocsCount, e.StoreSize}, delim))
+		if showCluster {
+			fmt.Println(strings.Join([]string{e.Cluster, e.Type, e.Health, e.Name, e.DocsCount, e.StoreSize}, delim))
+		} else {
+			fmt.Println(strings.Join([]string{e.Type, e.Health, e.Name, e.DocsCount, e.StoreSize}, delim))
+		}
 	}
 	return nil
 }

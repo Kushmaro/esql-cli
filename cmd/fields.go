@@ -39,6 +39,10 @@ func init() {
 }
 
 func runFields(cmd *cobra.Command, args []string) error {
+	if err := requireConnection(cmd); err != nil {
+		return err
+	}
+
 	index := args[0]
 
 	cfg, err := config.ClientConfig()

@@ -12,6 +12,7 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var saveCmd = &cobra.Command{
@@ -48,7 +49,8 @@ Examples:
 		}
 
 		_, existed := cfg.Queries[name]
-		cfg.Queries[name] = query
+		cluster := config.ActiveClusterName()
+		cfg.Queries[name] = config.SavedQuery{Query: query, Cluster: cluster}
 
 		if err := config.SaveFileConfig(cfg); err != nil {
 			return fmt.Errorf("saving config: %w", err)
@@ -58,6 +60,9 @@ Examples:
 			fmt.Fprintf(os.Stderr, "Query '%s' updated.\n", name)
 		} else {
 			fmt.Fprintf(os.Stderr, "Query '%s' saved.\n", name)
+		}
+		if cluster != "" {
+			fmt.Fprintf(os.Stderr, "Cluster: %s\n", cluster)
 		}
 		return nil
 	},
@@ -124,14 +129,19 @@ var queriesListCmd = &cobra.Command{
 				},
 			}),
 		)
-		tbl.Header([]string{"name", "query"})
+		tbl.Header([]string{"name", "cluster", "query"})
 
 		for _, name := range names {
-			q := cfg.Queries[name]
+			sq := cfg.Queries[name]
+			q := sq.Query
 			if len(q) > 80 {
 				q = q[:77] + "..."
 			}
-			tbl.Append([]any{name, q})
+			cluster := sq.Cluster
+			if cluster == "" {
+				cluster = "-"
+			}
+			tbl.Append([]any{name, cluster, q})
 		}
 
 		tbl.Render()
@@ -208,6 +218,10 @@ func looksLikeQuery(q string) bool {
 }
 
 func runSavedQuery(cmd *cobra.Command, args []string) error {
+	if err := requireConnection(cmd); err != nil {
+		return err
+	}
+
 	name := args[0]
 
 	cfg, err := config.LoadFileConfig()
@@ -215,9 +229,19 @@ func runSavedQuery(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	query, ok := cfg.Queries[name]
+	sq, ok := cfg.Queries[name]
 	if !ok {
 		return fmt.Errorf("unknown query %q (run 'esql queries list' to see saved queries)", name)
+	}
+
+	query := sq.Query
+
+	if sq.Cluster != "" && !cmd.Root().PersistentFlags().Changed("cluster") {
+		viper.Set("cluster", sq.Cluster)
+		quiet, _ := cmd.Flags().GetBool("quiet")
+		if !quiet {
+			fmt.Fprintf(os.Stderr, "Using cluster '%s' (saved with query)\n", sq.Cluster)
+		}
 	}
 
 	params, _ := cmd.Flags().GetStringArray("param")

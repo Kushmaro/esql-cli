@@ -316,6 +316,51 @@ func (c *Client) ListIndices(pattern string) ([]IndexInfo, error) {
 	return indices, nil
 }
 
+// RemoteClusterInfo represents a configured remote cluster from _remote/info.
+type RemoteClusterInfo struct {
+	Name            string `json:"name"`
+	Connected       bool   `json:"connected"`
+	Mode            string `json:"mode"`
+	SkipUnavailable bool   `json:"skip_unavailable"`
+}
+
+// ListRemoteClusters returns the configured remote clusters via GET /_remote/info.
+// Returns an empty slice (no error) if the API is unavailable (e.g., older ES versions
+// or insufficient privileges).
+func (c *Client) ListRemoteClusters() ([]RemoteClusterInfo, error) {
+	body, err := c.doGet("/_remote/info")
+	if err != nil {
+		var esErr *ESError
+		if errors.As(err, &esErr) {
+			if esErr.Status == http.StatusNotFound || esErr.Status == http.StatusForbidden {
+				return nil, nil
+			}
+		}
+		return nil, err
+	}
+
+	var raw map[string]struct {
+		Connected       bool   `json:"connected"`
+		Mode            string `json:"mode"`
+		SkipUnavailable bool   `json:"skip_unavailable"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("parsing remote info response: %w", err)
+	}
+
+	clusters := make([]RemoteClusterInfo, 0, len(raw))
+	for name, info := range raw {
+		clusters = append(clusters, RemoteClusterInfo{
+			Name:            name,
+			Connected:       info.Connected,
+			Mode:            info.Mode,
+			SkipUnavailable: info.SkipUnavailable,
+		})
+	}
+
+	return clusters, nil
+}
+
 // ResolvedIndex represents an index from the _resolve/index API.
 type ResolvedIndex struct {
 	Name string `json:"name"`

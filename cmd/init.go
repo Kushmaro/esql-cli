@@ -16,7 +16,7 @@ var initCmd = &cobra.Command{
 	Short: "Initialize connection settings",
 	Long: `Interactively configure Elasticsearch connection settings.
 Prompts for host, authentication method, and credentials,
-tests the connection, and saves the profile to ~/.esql.yaml.`,
+tests the connection, and saves the cluster to ~/.esql.yaml.`,
 	SilenceUsage: true,
 	RunE:         runInit,
 }
@@ -28,7 +28,7 @@ func init() {
 func runInit(cmd *cobra.Command, args []string) error {
 	reader := bufio.NewReader(os.Stdin)
 
-	profileName := prompt(reader, "Profile name", "default")
+	clusterName := prompt(reader, "Cluster name", "default")
 
 	host := prompt(reader, "Elasticsearch host", "http://localhost:9200")
 
@@ -83,7 +83,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	fileCfg.Profiles[profileName] = config.Profile{
+	fileCfg.Clusters[clusterName] = config.Cluster{
 		Host:     host,
 		User:     user,
 		Password: password,
@@ -91,12 +91,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		Insecure: insecure,
 	}
 
-	if len(fileCfg.Profiles) == 1 || fileCfg.DefaultProfile == "" {
-		fileCfg.DefaultProfile = profileName
+	if len(fileCfg.Clusters) == 1 || fileCfg.DefaultCluster == "" {
+		fileCfg.DefaultCluster = clusterName
 	} else {
-		setDefault := prompt(reader, fmt.Sprintf("Set '%s' as default profile? [y/N]", profileName), "N")
+		setDefault := prompt(reader, fmt.Sprintf("Set '%s' as default cluster? [y/N]", clusterName), "N")
 		if strings.ToLower(setDefault) == "y" || strings.ToLower(setDefault) == "yes" {
-			fileCfg.DefaultProfile = profileName
+			fileCfg.DefaultCluster = clusterName
 		}
 	}
 
@@ -105,16 +105,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	path, _ := config.ConfigPath()
-	fmt.Fprintf(os.Stderr, "\nProfile '%s' saved to %s\n", profileName, path)
+	fmt.Fprintf(os.Stderr, "\nCluster '%s' saved to %s\n", clusterName, path)
 
-	if fileCfg.DefaultProfile == profileName {
-		fmt.Fprintf(os.Stderr, "Set as default profile.\n")
+	if fileCfg.DefaultCluster == clusterName {
+		fmt.Fprintf(os.Stderr, "Set as default cluster.\n")
 	}
 
 	fmt.Fprintf(os.Stderr, "\nYou can now run:\n")
 	fmt.Fprintf(os.Stderr, "  esql query 'FROM my-index | LIMIT 10'\n")
-	if profileName != "default" {
-		fmt.Fprintf(os.Stderr, "  esql query --profile %s 'FROM my-index | LIMIT 10'\n", profileName)
+	if clusterName != "default" {
+		fmt.Fprintf(os.Stderr, "  esql query --cluster %s 'FROM my-index | LIMIT 10'\n", clusterName)
 	}
 
 	return nil
