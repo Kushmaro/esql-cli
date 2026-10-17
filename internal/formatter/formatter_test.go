@@ -3,6 +3,7 @@ package formatter
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -299,4 +300,33 @@ func TestFormatWithColumnFilter(t *testing.T) {
 			t.Errorf("header = %q, want %q (response order)", lines[0], "name,city")
 		}
 	})
+}
+
+func TestFullResponseOutput(t *testing.T) {
+	var response client.QueryResponse
+	raw := []byte(`{"id":"pending-id","is_running":true,"is_partial":true,"cpu_nanos":9007199254740993,"profile":{"driver":"detail"}}`)
+	if err := json.Unmarshal(raw, &response); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := Format(&buf, &response, Options{Format: "json", Raw: true}); err != nil {
+		t.Fatal(err)
+	}
+	var got, want interface{}
+	decoder := json.NewDecoder(bytes.NewReader(buf.Bytes()))
+	decoder.UseNumber()
+	if err := decoder.Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	decoder = json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("output=%s", buf.String())
+	}
+	if err := Format(&buf, &response, Options{Format: "csv"}); err == nil {
+		t.Fatal("formatted a pending query as completed rows")
+	}
 }

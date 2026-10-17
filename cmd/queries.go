@@ -2,13 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
 
 	"github.com/Kushmaro/esql-cli/internal/client"
 	"github.com/Kushmaro/esql-cli/internal/config"
-	"github.com/Kushmaro/esql-cli/internal/formatter"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/spf13/cobra"
@@ -40,7 +40,7 @@ Examples:
 		}
 
 		if !looksLikeQuery(query) {
-			return fmt.Errorf("query %q doesn't look like a valid ES|QL query — it should start with FROM, ROW, or SHOW", query)
+			return fmt.Errorf("query %q doesn't look like a valid ES|QL query — it should start with FROM, ROW, SHOW, TS, PROMQL, or SET", query)
 		}
 
 		cfg, err := config.LoadFileConfig()
@@ -150,9 +150,9 @@ var queriesListCmd = &cobra.Command{
 }
 
 var queriesRemoveCmd = &cobra.Command{
-	Use:   "remove <name>",
-	Short: "Remove a saved query",
-	Args:  cobra.ExactArgs(1),
+	Use:          "remove <name>",
+	Short:        "Remove a saved query",
+	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
@@ -197,6 +197,8 @@ func init() {
 	queriesRunCmd.Flags().StringArray("param", nil, "parameter in key=value format for {{key}} placeholders")
 	queriesRunCmd.Flags().StringP("output", "o", "", "write results to file instead of stdout")
 
+	addNativeQueryFlags(queriesRunCmd)
+	queriesRunCmd.Flags().Bool("raw", false, "return the full JSON response including metadata")
 	queriesCmd.AddCommand(queriesListCmd)
 	queriesCmd.AddCommand(queriesRemoveCmd)
 	queriesCmd.AddCommand(queriesRunCmd)
@@ -208,12 +210,15 @@ func init() {
 // looksLikeQuery checks whether a string looks like a valid ES|QL query
 // by verifying it starts with a known source command.
 func looksLikeQuery(q string) bool {
-	upper := strings.ToUpper(strings.TrimSpace(q))
-	for _, cmd := range []string{"FROM ", "ROW ", "SHOW ", "FROM\t", "ROW\t", "SHOW\t"} {
-		if strings.HasPrefix(upper, cmd) {
-			return true
-		}
+	words := strings.Fields(strings.ToUpper(q))
+	if len(words) < 2 {
+		return false
 	}
+	switch words[0] {
+	case "FROM", "ROW", "SHOW", "TS", "PROMQL", "SET":
+		return true
+	}
+
 	return false
 }
 
@@ -250,30 +255,15 @@ func runSavedQuery(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	format, _ := cmd.Flags().GetString("format")
-	delimiter, _ := cmd.Flags().GetString("delimiter")
-	if format == "" {
-		if delimiter != "" {
-			format = "tsv"
-		} else {
-			format = formatter.DefaultFormat()
-		}
+	opts, err := resultOptions(cmd, false)
+	if err != nil {
+		return err
 	}
-
-	noHeader, _ := cmd.Flags().GetBool("no-header")
-	quiet, _ := cmd.Flags().GetBool("quiet")
-	columns, _ := cmd.Flags().GetString("columns")
+	request, err := queryRequest(cmd, query)
+	if err != nil {
+		return err
+	}
 	timeout, _ := cmd.Flags().GetDuration("timeout")
-
-	var cols []string
-	if columns != "" {
-		for _, c := range strings.Split(columns, ",") {
-			if t := strings.TrimSpace(c); t != "" {
-				cols = append(cols, t)
-			}
-		}
-	}
-
 	clientCfg, err := config.ClientConfig()
 	if err != nil {
 		return err
@@ -283,26 +273,17 @@ func runSavedQuery(cmd *cobra.Command, args []string) error {
 	}
 	c := client.New(clientCfg)
 
-	opts := formatter.Options{
-		Format:    format,
-		NoHeader:  noHeader,
-		Delimiter: delimiter,
-		Columns:   cols,
-		Quiet:     quiet,
-	}
-
 	output, _ := cmd.Flags().GetString("output")
-	w, cleanup, err := resolveWriter(output)
-	if err != nil {
+	if err := validateParquetOutput(opts.Format, output, 1); err != nil {
 		return err
 	}
-	defer cleanup()
-
-	if err := executeOne(w, c, query, opts, quiet); err != nil {
+	if err := writeResults(output, opts.Format, func(w io.Writer) error {
+		return executeRequest(cmd.Context(), w, c, request, opts)
+	}); err != nil {
 		return err
 	}
 
-	if output != "" && !quiet {
+	if output != "" && !opts.Quiet {
 		fmt.Fprintf(os.Stderr, "Results written to %s\n", output)
 	}
 	return nil

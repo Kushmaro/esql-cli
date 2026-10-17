@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -27,21 +26,6 @@ type Client struct {
 	config     Config
 }
 
-type QueryRequest struct {
-	Query string `json:"query"`
-}
-
-type QueryResponse struct {
-	Columns []Column        `json:"columns"`
-	Values  [][]interface{} `json:"values"`
-	Took    int             `json:"took"`
-}
-
-type Column struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
-}
-
 // ConnectionError wraps errors caused by network/connection failures.
 type ConnectionError struct {
 	Err error
@@ -52,15 +36,19 @@ func (e *ConnectionError) Unwrap() error { return e.Err }
 
 // ESError represents a structured Elasticsearch error response (query errors).
 type ESError struct {
-	Status int
-	Type   string
-	Reason string
-	Raw    string
+	Language string // query language context for actionable CLI hints
+	Status   int
+	Type     string
+	Reason   string
+	Raw      string
 }
 
 func (e *ESError) Error() string {
 	if e.Type != "" && e.Reason != "" {
 		return fmt.Sprintf("[%d] %s: %s", e.Status, e.Type, e.Reason)
+	}
+	if e.Reason != "" {
+		return fmt.Sprintf("[%d] %s", e.Status, e.Reason)
 	}
 	return fmt.Sprintf("[%d] %s", e.Status, e.Raw)
 }
@@ -170,50 +158,6 @@ func (c *Client) clusterInfo() (*ClusterInfo, error) {
 	return &info, nil
 }
 
-func (c *Client) Query(esql string) (*QueryResponse, error) {
-	reqBody := QueryRequest{Query: esql}
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling request: %w", err)
-	}
-
-	url := strings.TrimRight(c.config.Host, "/") + "/_query"
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	if c.config.APIKey != "" {
-		req.Header.Set("Authorization", "ApiKey "+c.config.APIKey)
-	} else if c.config.User != "" {
-		req.SetBasicAuth(c.config.User, c.config.Password)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, &ConnectionError{Err: fmt.Errorf("connection failed: %w", err)}
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, parseESError(resp.StatusCode, respBody)
-	}
-
-	var result QueryResponse
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("parsing response: %w", err)
-	}
-
-	return &result, nil
-}
-
 // IndexInfo represents an index entry from _cat/indices.
 type IndexInfo struct {
 	Health    string `json:"health"`
@@ -232,13 +176,13 @@ type FieldInfo struct {
 
 // DataStreamInfo represents a data stream from the _data_stream API.
 type DataStreamInfo struct {
-	Name               string   `json:"name"`
-	TimestampField     string   `json:"timestamp_field"`
-	Status             string   `json:"status"`
-	Template           string   `json:"template"`
-	IndexMode          string   `json:"index_mode"`
-	BackingIndices     int      `json:"backing_indices"`
-	BackingIndexNames  []string `json:"backing_index_names,omitempty"`
+	Name              string   `json:"name"`
+	TimestampField    string   `json:"timestamp_field"`
+	Status            string   `json:"status"`
+	Template          string   `json:"template"`
+	IndexMode         string   `json:"index_mode"`
+	BackingIndices    int      `json:"backing_indices"`
+	BackingIndexNames []string `json:"backing_index_names,omitempty"`
 }
 
 // ListDataStreams returns data stream metadata via _data_stream.
@@ -381,7 +325,7 @@ type ResolvedDataStream struct {
 type ResolveResult struct {
 	Indices     []ResolvedIndex      `json:"indices"`
 	Aliases     []ResolvedAlias      `json:"aliases"`
-	DataStreams []ResolvedDataStream  `json:"data_streams"`
+	DataStreams []ResolvedDataStream `json:"data_streams"`
 }
 
 // ResolveIndex uses the _resolve/index API to discover indices and data streams.
@@ -525,5 +469,13 @@ func parseESError(status int, body []byte) *ESError {
 		return &ESError{Status: status, Type: typ, Reason: reason, Raw: string(body)}
 	}
 
+	// Prometheus-compatible endpoints return a string error and errorType.
+	var prometheus struct {
+		Error string `json:"error"`
+		Type  string `json:"errorType"`
+	}
+	if err := json.Unmarshal(body, &prometheus); err == nil && prometheus.Error != "" {
+		return &ESError{Status: status, Type: prometheus.Type, Reason: prometheus.Error, Raw: string(body)}
+	}
 	return &ESError{Status: status, Raw: string(body)}
 }
