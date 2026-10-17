@@ -1,7 +1,7 @@
 package repl
 
 var sourceCommands = []string{
-	"FROM", "ROW", "SHOW",
+	"FROM", "ROW", "SHOW", "TS", "PROMQL",
 }
 
 var processingCommands = []string{

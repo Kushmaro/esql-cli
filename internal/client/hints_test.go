@@ -132,3 +132,19 @@ type stubError struct {
 }
 
 func (e *stubError) Error() string { return e.msg }
+
+func TestPromQLErrorHints(t *testing.T) {
+	for _, tt := range []struct {
+		status    int
+		typ, want string
+	}{
+		{400, "parsing_exception", "PromQL"},
+		{406, "illegal_argument_exception", "--method GET"},
+		{503, "timeout", "--query-timeout"},
+	} {
+		hint := ErrorHint(&ESError{Status: tt.status, Type: tt.typ, Language: "PromQL", Reason: "test"})
+		if !strings.Contains(hint, tt.want) || strings.Contains(hint, "ES|QL") {
+			t.Fatalf("hint=%q", hint)
+		}
+	}
+}

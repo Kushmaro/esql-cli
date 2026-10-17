@@ -15,6 +15,7 @@ import (
 )
 
 type Options struct {
+	Raw       bool
 	Format    string
 	NoHeader  bool
 	Delimiter string
@@ -37,6 +38,25 @@ func DefaultFormat() string {
 
 // Format writes the query response to w using the given options.
 func Format(w io.Writer, resp *client.QueryResponse, opts Options) error {
+	if opts.Raw {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		if len(resp.Raw) > 0 {
+			return enc.Encode(resp.Raw)
+		}
+		return enc.Encode(resp)
+	}
+	if resp.IsRunning {
+		return fmt.Errorf("query is still running; retrieve its results again before formatting rows")
+	}
+	// Validate before filtering, which indexes each selected value.
+	if strings.EqualFold(opts.Format, "parquet") {
+		for i, row := range resp.Values {
+			if len(row) != len(resp.Columns) {
+				return fmt.Errorf("Parquet row %d has %d values for %d columns", i+1, len(row), len(resp.Columns))
+			}
+		}
+	}
 	filtered := resp
 	if len(opts.Columns) > 0 {
 		filtered = filterColumns(resp, opts.Columns)
@@ -88,7 +108,7 @@ func filterColumns(resp *client.QueryResponse, columns []string) *client.QueryRe
 		values[i] = newRow
 	}
 
-	return &client.QueryResponse{Columns: cols, Values: values, Took: resp.Took}
+	return &client.QueryResponse{Columns: cols, Values: values, Took: resp.Took, IsPartial: resp.IsPartial}
 }
 
 func formatValue(v interface{}) string {

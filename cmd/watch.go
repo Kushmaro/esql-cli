@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -42,6 +43,8 @@ func init() {
 	watchCmd.Flags().Duration("timeout", 0, "per-query timeout (e.g. 60s, 5m)")
 	watchCmd.Flags().StringArray("param", nil, "parameter in key=value format for {{key}} placeholders")
 	watchCmd.Flags().String("saved", "", "run a saved query by name instead of an inline query")
+	addNativeQueryFlags(watchCmd)
+	watchCmd.Flags().Bool("raw", false, "return the full JSON response including metadata")
 	rootCmd.AddCommand(watchCmd)
 }
 
@@ -80,24 +83,18 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	}
 
 	every, _ := cmd.Flags().GetDuration("every")
-	format, _ := cmd.Flags().GetString("format")
-	delimiter, _ := cmd.Flags().GetString("delimiter")
-	if delimiter != "" && format == "table" {
-		format = "tsv"
+	opts, err := resultOptions(cmd, false)
+	if err != nil {
+		return err
 	}
-	noHeader, _ := cmd.Flags().GetBool("no-header")
-	columns, _ := cmd.Flags().GetString("columns")
+	if strings.EqualFold(opts.Format, "parquet") {
+		return fmt.Errorf("watch does not support Parquet; use query or export with an output file")
+	}
+	request, err := queryRequest(cmd, query)
+	if err != nil {
+		return err
+	}
 	timeout, _ := cmd.Flags().GetDuration("timeout")
-
-	var cols []string
-	if columns != "" {
-		for _, c := range strings.Split(columns, ",") {
-			if t := strings.TrimSpace(c); t != "" {
-				cols = append(cols, t)
-			}
-		}
-	}
-
 	clientCfg, err := config.ClientConfig()
 	if err != nil {
 		return err
@@ -107,13 +104,6 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	}
 	c := client.New(clientCfg)
 
-	opts := formatter.Options{
-		Format:    format,
-		NoHeader:  noHeader,
-		Delimiter: delimiter,
-		Columns:   cols,
-	}
-
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sig)
@@ -122,7 +112,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	defer ticker.Stop()
 
 	// Run immediately on first iteration
-	clearAndRun(c, query, opts, every)
+	clearAndRun(c, request, opts, every)
 
 	for {
 		select {
@@ -130,18 +120,18 @@ func runWatch(cmd *cobra.Command, args []string) error {
 			fmt.Fprintln(os.Stderr, "\nStopped.")
 			return nil
 		case <-ticker.C:
-			clearAndRun(c, query, opts, every)
+			clearAndRun(c, request, opts, every)
 		}
 	}
 }
 
-func clearAndRun(c *client.Client, query string, opts formatter.Options, every time.Duration) {
+func clearAndRun(c *client.Client, request client.QueryRequest, opts formatter.Options, every time.Duration) {
 	fmt.Fprint(os.Stdout, "\033[2J\033[H")
 
 	now := time.Now().Format("15:04:05")
 	fmt.Fprintf(os.Stderr, "Every %s — %s\n\n", every, now)
 
-	resp, err := c.Query(query)
+	resp, err := c.ExecuteQuery(context.Background(), request)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		if hint := client.ErrorHint(err); hint != "" {

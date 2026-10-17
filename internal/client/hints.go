@@ -102,6 +102,18 @@ func connectionHint(err error) string {
 }
 
 func esErrorHint(err *ESError) string {
+	if err.Language == "PromQL" {
+		switch err.Status {
+		case http.StatusBadRequest:
+			return "PromQL request rejected — check the expression, selectors, and time parameters."
+		case http.StatusNotAcceptable:
+			return "Form-encoded POST rejected — use --method GET or enable authenticated HTTPS on Elasticsearch's HTTP interface."
+		case http.StatusServiceUnavailable:
+			if err.Type == "timeout" {
+				return "PromQL query timed out — narrow the time range or adjust --query-timeout within the server limit."
+			}
+		}
+	}
 	switch err.Status {
 	case http.StatusUnauthorized:
 		return "Authentication failed (401) — check your --user/--password or --api-key credentials."

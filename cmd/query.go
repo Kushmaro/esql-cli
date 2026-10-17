@@ -1,20 +1,19 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/Kushmaro/esql-cli/internal/client"
 	"github.com/Kushmaro/esql-cli/internal/config"
 	"github.com/Kushmaro/esql-cli/internal/formatter"
 	"github.com/spf13/cobra"
 )
-
-// Ensure time.Duration is used for the timeout flag registration.
-var _ time.Duration
 
 var queryCmd = &cobra.Command{
 	Use:   "query [esql query string | -]",
@@ -47,6 +46,8 @@ func init() {
 	queryCmd.Flags().String("file", "", "read queries from file (separated by ; or blank lines)")
 	queryCmd.Flags().StringArray("param", nil, "parameter in key=value format for {{key}} placeholders")
 	queryCmd.Flags().StringP("output", "o", "", "write results to file instead of stdout")
+	addNativeQueryFlags(queryCmd)
+	queryCmd.Flags().Bool("raw", false, "return the full JSON response including metadata")
 	rootCmd.AddCommand(queryCmd)
 }
 
@@ -61,30 +62,11 @@ func runQuery(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	format, _ := cmd.Flags().GetString("format")
-	delimiter, _ := cmd.Flags().GetString("delimiter")
-	if format == "" {
-		if delimiter != "" {
-			format = "tsv"
-		} else {
-			format = formatter.DefaultFormat()
-		}
+	opts, err := resultOptions(cmd, false)
+	if err != nil {
+		return err
 	}
-
-	noHeader, _ := cmd.Flags().GetBool("no-header")
-	quiet, _ := cmd.Flags().GetBool("quiet")
-	columns, _ := cmd.Flags().GetString("columns")
 	timeout, _ := cmd.Flags().GetDuration("timeout")
-
-	var cols []string
-	if columns != "" {
-		for _, c := range strings.Split(columns, ",") {
-			if t := strings.TrimSpace(c); t != "" {
-				cols = append(cols, t)
-			}
-		}
-	}
-
 	cfg, err := config.ClientConfig()
 	if err != nil {
 		return err
@@ -94,64 +76,52 @@ func runQuery(cmd *cobra.Command, args []string) error {
 	}
 	c := client.New(cfg)
 
-	opts := formatter.Options{
-		Format:    format,
-		NoHeader:  noHeader,
-		Delimiter: delimiter,
-		Columns:   cols,
-		Quiet:     quiet,
-	}
-
 	output, _ := cmd.Flags().GetString("output")
-	w, cleanup, err := resolveWriter(output)
-	if err != nil {
+	if err := validateParquetOutput(opts.Format, output, len(queries)); err != nil {
 		return err
 	}
-	defer cleanup()
-
 	params, _ := cmd.Flags().GetStringArray("param")
-
+	requests := make([]client.QueryRequest, len(queries))
 	for i, query := range queries {
-		if len(params) > 0 {
-			query, err = config.ApplyParams(query, params)
-			if err != nil {
-				return err
-			}
-		}
-		if err := executeOne(w, c, query, opts, quiet); err != nil {
-			if len(queries) > 1 {
-				fmt.Fprintf(os.Stderr, "Error in query %d: %s\n", i+1, err)
-				continue
-			}
+		query, err = config.ApplyParams(query, params)
+		if err != nil {
 			return err
 		}
-
-		if len(queries) > 1 && i < len(queries)-1 && !quiet && formatter.IsTTY() {
-			fmt.Fprintln(os.Stderr)
+		requests[i], err = queryRequest(cmd, query)
+		if err != nil {
+			return err
 		}
 	}
-
-	if output != "" && !quiet {
+	err = writeResults(output, opts.Format, func(w io.Writer) error {
+		var failures []error
+		for i, req := range requests {
+			if err := executeRequest(cmd.Context(), w, c, req, opts); err != nil {
+				if len(requests) == 1 {
+					return err
+				}
+				failures = append(failures, fmt.Errorf("query %d: %w", i+1, err))
+				continue
+			}
+		}
+		return errors.Join(failures...)
+	})
+	if err == nil && output != "" && !opts.Quiet {
 		fmt.Fprintf(os.Stderr, "Results written to %s\n", output)
 	}
-
-	return nil
+	return err
 }
 
-func executeOne(w io.Writer, c *client.Client, query string, opts formatter.Options, quiet bool) error {
-	resp, err := c.Query(query)
+func executeRequest(ctx context.Context, w io.Writer, c *client.Client, request client.QueryRequest, opts formatter.Options) error {
+	resp, err := c.ExecuteQuery(ctx, request)
 	if err != nil {
 		return err
 	}
-
 	if err := formatter.Format(w, resp, opts); err != nil {
 		return err
 	}
-
-	if !quiet && formatter.IsTTY() {
+	if !opts.Quiet && formatter.IsTTY() {
 		fmt.Fprintf(os.Stderr, "\n%d rows in set (%dms)\n", len(resp.Values), resp.Took)
 	}
-
 	return nil
 }
 
@@ -207,4 +177,48 @@ func splitQueries(input string) []string {
 		}
 	}
 	return queries
+}
+
+// Parquet has one schema and footer per file. Concatenating query outputs would
+// produce a corrupt file; validate before opening or truncating the destination.
+func validateParquetOutput(format, output string, queryCount int) error {
+	if !strings.EqualFold(format, "parquet") {
+		return nil
+	}
+	if queryCount != 1 {
+		return fmt.Errorf("Parquet output requires exactly one query; run each query with a separate output file")
+	}
+	if output == "" && formatter.IsTTY() {
+		return fmt.Errorf("Parquet is binary; use --output or redirect stdout to a file")
+	}
+	return nil
+}
+
+// writeResults publishes a Parquet file only after the footer and file close
+// succeed. Failures leave an existing destination intact and remove temp files.
+func writeResults(output, format string, write func(io.Writer) error) error {
+	if output == "" || !strings.EqualFold(format, "parquet") {
+		w, cleanup, err := resolveWriter(output)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		return write(w)
+	}
+	f, err := os.CreateTemp(filepath.Dir(output), ".esql-parquet-*")
+	if err != nil {
+		return fmt.Errorf("creating output file: %w", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+	if err := write(f); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing output file: %w", err)
+	}
+	if err := os.Rename(f.Name(), output); err != nil {
+		return fmt.Errorf("publishing output file: %w", err)
+	}
+	return nil
 }
