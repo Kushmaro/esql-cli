@@ -40,9 +40,9 @@ func (sq *SavedQuery) UnmarshalYAML(value *yaml.Node) error {
 
 // FileConfig represents the full ~/.esql.yaml structure.
 type FileConfig struct {
-	DefaultCluster string                 `yaml:"default_cluster,omitempty"`
-	Clusters       map[string]Cluster     `yaml:"clusters,omitempty"`
-	Queries        map[string]SavedQuery  `yaml:"queries,omitempty"`
+	DefaultCluster string                `yaml:"default_cluster,omitempty"`
+	Clusters       map[string]Cluster    `yaml:"clusters,omitempty"`
+	Queries        map[string]SavedQuery `yaml:"queries,omitempty"`
 }
 
 // ClientConfig builds a client.Config from the current Viper state.
@@ -135,9 +135,9 @@ func LoadFileConfig() (*FileConfig, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &FileConfig{
-			Clusters: make(map[string]Cluster),
-			Queries:  make(map[string]SavedQuery),
-		}, nil
+				Clusters: make(map[string]Cluster),
+				Queries:  make(map[string]SavedQuery),
+			}, nil
 		}
 		return nil, err
 	}
@@ -168,7 +168,23 @@ func SaveFileConfig(cfg *FileConfig) error {
 		return fmt.Errorf("encoding config: %w", err)
 	}
 
-	return os.WriteFile(path, data, 0600)
+	// Open without truncating first: WriteFile's mode only applies to new
+	// files, so an existing config must be secured before writing secrets.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := f.Chmod(0600); err != nil {
+		return fmt.Errorf("securing config permissions: %w", err)
+	}
+	if err := f.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 // ListClusters returns the names of all configured clusters.

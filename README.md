@@ -292,7 +292,9 @@ clusters:
 
 If no keyring is available (for example a headless Linux box without a Secret
 Service daemon), `esql init` warns and falls back to storing the credentials in
-plain text in the config file, which is written with `0600` permissions.
+plain text in `~/.esql.yaml` (or the file selected by `--config`). On Unix,
+the file's permissions are set to `0600` before writing, including for an
+existing config file.
 Existing clusters with plain-text credentials keep working; re-run `esql init`
 with the same cluster name to move them into the keyring.
 
