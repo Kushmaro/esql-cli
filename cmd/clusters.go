@@ -93,7 +93,8 @@ var clustersRemoveCmd = &cobra.Command{
 			return err
 		}
 
-		if _, ok := cfg.Clusters[name]; !ok {
+		cluster, ok := cfg.Clusters[name]
+		if !ok {
 			return fmt.Errorf("unknown cluster %q (run 'esql clusters list' to see available clusters)", name)
 		}
 
@@ -118,6 +119,12 @@ var clustersRemoveCmd = &cobra.Command{
 
 		if err := config.SaveFileConfig(cfg); err != nil {
 			return fmt.Errorf("saving config: %w", err)
+		}
+
+		if cluster.Keyring {
+			if err := config.DeleteCredentials(name); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not remove keyring credentials: %v\n", err)
+			}
 		}
 
 		fmt.Fprintf(os.Stderr, "Cluster '%s' removed.\n", name)
