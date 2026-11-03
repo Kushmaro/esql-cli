@@ -16,7 +16,8 @@ var initCmd = &cobra.Command{
 	Short: "Initialize connection settings",
 	Long: `Interactively configure Elasticsearch connection settings.
 Prompts for host, authentication method, and credentials,
-tests the connection, and saves the cluster to ~/.esql.yaml.`,
+tests the connection, and saves the cluster to ~/.esql.yaml.
+Passwords and API keys are stored in the OS keyring when one is available.`,
 	SilenceUsage: true,
 	RunE:         runInit,
 }
@@ -83,13 +84,26 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	fileCfg.Clusters[clusterName] = config.Cluster{
+	cluster := config.Cluster{
 		Host:     host,
 		User:     user,
-		Password: password,
-		APIKey:   apiKey,
 		Insecure: insecure,
 	}
+	if password != "" || apiKey != "" {
+		if err := config.SaveCredentials(clusterName, config.Credentials{Password: password, APIKey: apiKey}); err != nil {
+			fmt.Fprintf(os.Stderr, "\nWarning: could not save credentials to the OS keyring: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Storing them in plain text in the config file instead.\n")
+			cluster.Password = password
+			cluster.APIKey = apiKey
+		} else {
+			cluster.Keyring = true
+		}
+	} else if prev, ok := fileCfg.Clusters[clusterName]; ok && prev.Keyring {
+		if err := config.DeleteCredentials(clusterName); err != nil {
+			fmt.Fprintf(os.Stderr, "\nWarning: could not remove old keyring credentials: %v\n", err)
+		}
+	}
+	fileCfg.Clusters[clusterName] = cluster
 
 	if len(fileCfg.Clusters) == 1 || fileCfg.DefaultCluster == "" {
 		fileCfg.DefaultCluster = clusterName
@@ -106,6 +120,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	path, _ := config.ConfigPath()
 	fmt.Fprintf(os.Stderr, "\nCluster '%s' saved to %s\n", clusterName, path)
+	if cluster.Keyring {
+		fmt.Fprintf(os.Stderr, "Credentials stored in the OS keyring.\n")
+	}
 
 	if fileCfg.DefaultCluster == clusterName {
 		fmt.Fprintf(os.Stderr, "Set as default cluster.\n")

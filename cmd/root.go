@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"github.com/Kushmaro/esql-cli/internal/client"
 	"github.com/Kushmaro/esql-cli/internal/config"
@@ -43,6 +44,17 @@ interactive shell with tab completion and history.`,
 		}
 		return cmd.Help()
 	},
+}
+
+// SetVersionInfo sets the string printed by `esql --version`. Builds made with
+// `go install` have no ldflags, so fall back to the module version.
+func SetVersionInfo(version, commit, date string) {
+	if version == "dev" {
+		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			version = info.Main.Version
+		}
+	}
+	rootCmd.Version = fmt.Sprintf("%s (commit %s, built %s)", version, commit, date)
 }
 
 func Execute() {

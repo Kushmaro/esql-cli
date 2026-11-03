@@ -11,7 +11,25 @@ Think `psql` for Postgres or `mysql` for MySQL, but for ES|QL against Elasticsea
 - One-shot mode for scripting and piping (`esql query "FROM logs | LIMIT 10"`)
 - Table, JSON, NDJSON, CSV, TSV, and Parquet output formats
 - Complete index-to-Parquet exports using point-in-time pagination
-- Connection profiles for managing multiple clusters
+- Named cluster connections, with credentials kept in the OS keychain
+
+## Installation
+
+Download a prebuilt binary for macOS, Linux, or Windows from the
+[releases page](https://github.com/Kushmaro/esql-cli/releases), or install with Go 1.25+:
+
+```bash
+go install github.com/Kushmaro/esql-cli@latest
+```
+
+`go install` names the binary after the module, so it is installed as `esql-cli`.
+Rename it or add `alias esql=esql-cli` to use the `esql` name shown below.
+
+Then set up a connection:
+
+```bash
+esql init
+```
 
 ## Example
 
@@ -35,13 +53,13 @@ esql> FROM employees | WHERE department == "engineering" | KEEP name, title, hir
 | Config management  | Viper                   | Cobra companion. Merges config files, env vars, and flags into one layer  |
 | ES transport       | `net/http` (stdlib)     | ES|QL queries use `POST _query`; complete exports use PIT and search APIs |
 | Table rendering    | `tablewriter`           | Clean ASCII/Unicode table output in the terminal                          |
-| Interactive REPL   | TBD (`readline` / `bubbletea`) | Line editing, history, multiline input for the interactive mode    |
+| Interactive REPL   | `liner`                 | Line editing, history, and tab completion for the interactive mode        |
 
 ### Why Cobra over alternatives
 
 Cobra was chosen over `urfave/cli`, `kong`, and bare `flag` because:
 
-1. **Subcommand structure** — the tool naturally splits into `query`, `connect`, `indices`, and a default REPL mode
+1. **Subcommand structure** — the tool naturally splits into `query`, `clusters`, `export`, and a default REPL mode
 2. **Viper integration** — connection config (host, auth, TLS) needs to merge from `~/.esql.yaml`, env vars (`ESQL_HOST`, `ESQL_USER`), and flags (`--host`, `--user`) seamlessly
 3. **Shell completions** — generated for bash/zsh/fish/powershell for free
 4. **Ecosystem familiarity** — any Go developer will recognize the project structure immediately
@@ -67,11 +85,13 @@ esql/
 ├── cmd/                    # Cobra command definitions
 │   ├── root.go             # Root command (launches REPL by default)
 │   ├── query.go            # One-shot query execution
-│   └── init.go             # Connection initialization
+│   ├── init.go             # Interactive connection setup
+│   └── ...                 # clusters, queries, export, async, views, promql, ...
 ├── internal/
-│   ├── client/             # Elasticsearch HTTP client (ES|QL endpoint)
-│   ├── config/             # Viper config loading and profiles
-│   ├── formatter/          # Output formatting (table, JSON, CSV)
+│   ├── client/             # Elasticsearch HTTP client
+│   ├── config/             # Viper config loading, clusters, keyring credentials
+│   ├── exporter/           # Point-in-time index exports
+│   ├── formatter/          # Output formatting (table, JSON, CSV, TSV, Parquet)
 │   └── repl/               # Interactive REPL
 ├── go.mod
 ├── go.sum
@@ -250,7 +270,35 @@ and deployment verification results.
 
 ## Configuration
 
-Connection settings are resolved in this order (later wins):
+The easiest way to add a cluster is `esql init`, which prompts for the host and
+credentials, tests the connection, and saves a named cluster to `~/.esql.yaml`.
+Manage saved clusters with `esql clusters list|set|remove`, and pick one per
+command with `--cluster <name>`.
+
+### Credentials and the OS keyring
+
+`esql init` stores passwords and API keys in the OS keyring (macOS Keychain,
+Secret Service on Linux, Windows Credential Manager) under the service name
+`esql-cli`. The config file then only records the non-secret settings:
+
+```yaml
+default_cluster: prod
+clusters:
+  prod:
+    host: https://my-cluster.es.example.com:9200
+    user: elastic
+    keyring: true
+```
+
+If no keyring is available (for example a headless Linux box without a Secret
+Service daemon), `esql init` warns and falls back to storing the credentials in
+plain text in the config file, which is written with `0600` permissions.
+Existing clusters with plain-text credentials keep working; re-run `esql init`
+with the same cluster name to move them into the keyring.
+
+### Ad-hoc connections
+
+Without a named cluster, connection settings are resolved in this order (later wins):
 
 1. Config file (`~/.esql.yaml`)
 2. Environment variables (`ESQL_HOST`, `ESQL_USER`, `ESQL_PASSWORD`, `ESQL_API_KEY`)
@@ -276,9 +324,10 @@ insecure: false
 ## Building
 
 ```bash
-go build -o esql .
+make build   # builds ./esql with version info
+make test
 ```
 
 ## License
 
-TBD
+[MIT](LICENSE)

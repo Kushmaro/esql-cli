@@ -17,6 +17,8 @@ type Cluster struct {
 	Password string `yaml:"password,omitempty"`
 	APIKey   string `yaml:"api_key,omitempty"`
 	Insecure bool   `yaml:"insecure,omitempty"`
+	// Keyring means Password and APIKey live in the OS keyring, not this file.
+	Keyring bool `yaml:"keyring,omitempty"`
 }
 
 // SavedQuery stores a query string and the cluster it was saved from.
@@ -52,33 +54,23 @@ func ClientConfig() (client.Config, error) {
 	verbose := viper.GetBool("verbose")
 
 	if cluster != "" {
-		key := "clusters." + cluster + "."
-		host := viper.GetString(key + "host")
-		if host == "" {
+		cfg, found, err := clusterClientConfig(cluster, verbose)
+		if err != nil {
+			return client.Config{}, err
+		}
+		if !found {
 			return client.Config{}, fmt.Errorf("unknown cluster %q (run 'esql clusters list' to see available clusters)", cluster)
 		}
-		return client.Config{
-			Host:     host,
-			User:     viper.GetString(key + "user"),
-			Password: viper.GetString(key + "password"),
-			APIKey:   viper.GetString(key + "api_key"),
-			Insecure: viper.GetBool(key + "insecure"),
-			Verbose:  verbose,
-		}, nil
+		return cfg, nil
 	}
 
 	if dc := viper.GetString("default_cluster"); dc != "" {
-		key := "clusters." + dc + "."
-		host := viper.GetString(key + "host")
-		if host != "" {
-			return client.Config{
-				Host:     host,
-				User:     viper.GetString(key + "user"),
-				Password: viper.GetString(key + "password"),
-				APIKey:   viper.GetString(key + "api_key"),
-				Insecure: viper.GetBool(key + "insecure"),
-				Verbose:  verbose,
-			}, nil
+		cfg, found, err := clusterClientConfig(dc, verbose)
+		if err != nil {
+			return client.Config{}, err
+		}
+		if found {
+			return cfg, nil
 		}
 	}
 
@@ -90,6 +82,34 @@ func ClientConfig() (client.Config, error) {
 		Insecure: viper.GetBool("insecure"),
 		Verbose:  verbose,
 	}, nil
+}
+
+// clusterClientConfig loads a named cluster's settings, reading its secrets
+// from the OS keyring when the cluster is marked keyring: true.
+// found is false when no cluster with that name has a host configured.
+func clusterClientConfig(name string, verbose bool) (cfg client.Config, found bool, err error) {
+	key := "clusters." + name + "."
+	host := viper.GetString(key + "host")
+	if host == "" {
+		return client.Config{}, false, nil
+	}
+	cfg = client.Config{
+		Host:     host,
+		User:     viper.GetString(key + "user"),
+		Password: viper.GetString(key + "password"),
+		APIKey:   viper.GetString(key + "api_key"),
+		Insecure: viper.GetBool(key + "insecure"),
+		Verbose:  verbose,
+	}
+	if viper.GetBool(key + "keyring") {
+		creds, err := LoadCredentials(name)
+		if err != nil {
+			return client.Config{}, true, fmt.Errorf("reading credentials for cluster %q from the OS keyring: %w (run 'esql init' to store them again)", name, err)
+		}
+		cfg.Password = creds.Password
+		cfg.APIKey = creds.APIKey
+	}
+	return cfg, true, nil
 }
 
 // ConfigPath returns the path to the config file.
