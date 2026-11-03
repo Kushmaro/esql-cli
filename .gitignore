@@ -10,6 +10,7 @@
 /esql-cli
 /esql-cli.exe
 dist/
+/THIRD_PARTY_NOTICES
 
 # Test binary, built with `go test -c`
 *.test

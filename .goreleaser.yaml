@@ -1,5 +1,9 @@
 version: 2
 
+before:
+  hooks:
+    - ./scripts/third-party-notices.sh
+
 builds:
   - binary: esql
     env:
@@ -17,6 +21,7 @@ archives:
     files:
       - LICENSE
       - README.md
+      - THIRD_PARTY_NOTICES
 
 checksum:
   name_template: checksums.txt
